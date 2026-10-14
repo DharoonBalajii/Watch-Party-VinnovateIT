@@ -1,86 +1,136 @@
-# Watch Party
+<div align="center">
 
-Watch movies in lockstep with friends. One person starts a room, shares the link or a six-character code, and everyone's play, pause and seek stay in sync — with live chat, emoji reactions, a shared queue, group polls and host transfer riding along.
+# 🍿 Watch Party
 
-> **Same movie. Same second.**
+### Same movie. Same second.
 
-All titles in the catalog are public-domain or Creative-Commons films (Blender open movies, silent-era classics, public-domain features), so there is nothing to license.
+Watch movies in lockstep with friends. Start a room, share the link, and everyone's play, pause and seek stay in sync, with live chat, reactions, a shared queue and group polls along for the ride.
 
-## Run it
+**Built by [Dharoon Balajii](https://github.com/DharoonBalajii) for VinnovateIT Recruitment'26**
 
-Requires Node 20+.
+![Node](https://img.shields.io/badge/node-%E2%89%A5%2020.19-3c873a) ![React](https://img.shields.io/badge/React-19-61dafb) ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6) ![Tests](https://img.shields.io/badge/tests-37%20passing-4ee6b5) ![p95 latency](https://img.shields.io/badge/control%20latency%20p95-3%20ms-ffd84a) ![drift](https://img.shields.io/badge/max%20drift-83%20ms-ff5c8a)
+
+</div>
+
+---
+
+## Quick start
+
+You need **Node 20.19+** (check with `node -v`) and a modern browser. Nothing else: no database, no accounts, no API keys.
 
 ```bash
+git clone https://github.com/DharoonBalajii/Watch-Party-VinnovateIT.git
+cd Watch-Party-VinnovateIT
 npm install
-npm start          # builds the client, then serves everything on http://localhost:4000
+npm start
 ```
 
-`npm start` prints a **Network** URL (e.g. `http://192.168.1.20:4000`). Open it on any device on the same Wi-Fi and everyone can join the same room.
+Open **http://localhost:4000**, enter a name, press **Start a room**, and send the invite link to a friend.
 
-For development with hot reload (client on `:5173`, proxying to the server on `:4000`):
+`npm start` also prints a **Network** address such as `http://192.168.1.20:4000`. Anyone on the same Wi-Fi can open it and join your room.
 
-```bash
-npm run dev
-```
-
-## What's in it
-
-| Requirement | Where it lives |
+| I want to… | Run |
 | --- | --- |
-| Create / join via invite link or room code | Lobby ticket (`/`), `/r/KQTM72` links, **Invite** popover |
-| Synced play, pause, seek | Server-authoritative playback anchor; `shared/src/sync.ts` |
-| Discovery: categories, filters, fuzzy search | **Find a movie** drawer: recommendation rails, genre/mood/length/era filters, Fuse.js fuzzy search |
-| Emoji reactions, live chat | Reaction bar (keys `1`–`7`), Chat tab with typing indicators |
-| Shared playlist | Queue tab: add, up-vote to reorder, play now, remove, auto-advance |
-| Group polls | Polls tab: live bars, change your vote, closing queues the winner |
-| Host transfer | Click a seat → *Make host*, or Settings → People; automatic if the host disappears |
-| Drift detection and correction | `client/src/net/syncEngine.ts` (nudge → seek), reported live to the room |
-| Late joins, reconnects, concurrent actions | Snapshot-on-join, seat tokens + 30 s grace, serialized idempotent controls |
+| Use the app | `npm start` |
+| Develop with hot reload (client on :5173) | `npm run dev` |
+| Run the unit tests | `npm test` |
+| Check that every movie URL works | `npm run verify-catalog` |
+| Load-test the server | `npm run loadtest` |
+| Test in real browsers | `npm run build && npm run e2e` |
+
+> Videos stream from archive.org, so playback needs an internet connection. To serve your own files from the LAN instead, drop them in `server/media/` (they appear at `/media/<file>`).
+
+## Features
+
+**Rooms**
+- Create and join through an invite link (`/r/KQTM72`) or a six-character code.
+- Up to 50 viewers per room, with a clear message when it's full.
+- Host controls, automatic host transfer if the host disappears, and a "host only" mode.
+
+**Synced playback**
+- Play, pause and seek reach everyone together, even when several people act at once.
+- Automatic drift detection and correction, so nobody quietly falls behind.
+- Late joiners land on the right frame; dropped connections rejoin their own seat.
+
+**Discover**
+- 21 public-domain and Creative-Commons films: Blender open movies, silent-era classics, and public-domain features.
+- Recommendation rails ("More like this", "Quick watches", "Lights off"…).
+- Filters by genre, mood, length and era, plus typo-tolerant fuzzy search.
+
+**Together**
+- Emoji reactions that float up from the sender's seat (keys `1`–`7`).
+- Live chat with typing indicators.
+- Shared queue with up-votes and auto-advance, and group polls whose winner joins the queue.
 
 ### Creative extras
 
-- **Sync Strip**: the seek bar is a film strip. Every viewer is a pin on it (green / amber / red by drift), and reactions are stamped to the timecode so the room's best moments glow as a heat-map.
-- **Seat row**: viewers sit in a row of cinema seats under the screen, each with a live drift gauge, buffering ring, host crown and typing dots. Reactions float up from the sender's seat.
-- **Start together**: a ready check followed by a film-leader 3-2-1 that lands on the same server instant for everyone. The tap on "I'm ready" also unlocks audio autoplay on that device.
-- **Hold for stragglers**: if someone's video is buffering, the room pauses, then resumes together (with a 15 s cap, and a grace period for people who just joined).
-- **Sync health** popover: round trip, clock offset, your drift and correction mode, and the control latency this device has actually measured. The proof for the numbers below, in the product.
+| | |
+| --- | --- |
+| 🎞️ **Sync Strip** | The seek bar is a film strip. Every viewer is a pin on it (green, amber or red by drift), and reactions are stamped to the timecode so the room's best moments glow as a heat-map. |
+| 💺 **Seat row** | Viewers sit in a row of cinema seats with a live drift gauge, buffering ring, host crown and typing dots. |
+| 🎬 **Start together** | A ready check followed by a film-leader 3-2-1 that lands on the same instant for everyone. |
+| ⏸️ **Hold for stragglers** | If someone's video is buffering, the room pauses and resumes together. |
+| 📡 **Sync health** | A live panel with round trip, clock offset, your drift and the control latency your device has measured. |
+
+## Results
+
+Measured, not estimated. Full methods and caveats are in **[docs/LATENCY.md](docs/LATENCY.md)**.
+
+| Requirement | Target | Measured |
+| --- | --- | --- |
+| Users per room | ≥ 10 | 50 seats; tested with 10, 25 and 50 simulated viewers and 11 real Chrome pages |
+| Control propagation (p95) | ≤ 250 ms | **2–3 ms** on loopback, **46–47 ms** with 15 ms ± 10 ms emulated each way |
+| Drift after correction | ≤ 500 ms | **max 83 ms** steady state; recovered from a 2 s error in **153 ms** |
+| Reliability | late joins, reconnects, concurrent actions | All checked, including chaos runs |
+
+Loopback is a best case. Real Wi-Fi with packet loss was not tested.
 
 ## How the sync works
 
-The server owns one playback **anchor**: `{ videoId, status, anchorPos, anchorServerTime, seq }`. The playhead at any moment is `anchorPos + (serverNow − anchorServerTime)` while playing. Because the room is described by an anchor rather than a stream of positions, a late joiner or a reconnecting client needs exactly one message to be correct.
-
-- **Clock sync**: each client runs NTP-style ping bursts and keeps the median offset of its five lowest-RTT samples, so it can evaluate the anchor on the server's clock.
-- **Controls** are intents (`play`, `pause`, `seek`, `load`), not toggles, so two people pressing pause at once converge on one state. The server serializes them, stamps `seq`, and schedules `play` / seek-while-playing ~180 ms ahead so every client starts at the same instant.
-- **Drift loop** (every 250 ms): under 50 ms leave it alone; under 400 ms nudge `playbackRate` by 3–12 % (no visible jump); beyond that hard-seek, with a 1.5 s cooldown so a struggling client can't seek-storm.
-- **Failure handling**: heartbeats drop dead sockets, seat tokens survive reconnects (30 s grace), rate limits and payload caps protect the room, and stale `seq`s are ignored. See [docs/LATENCY.md](docs/LATENCY.md) for the full matrix.
-
-## Test it
-
-```bash
-npm test                    # 37 unit tests: sync math, room state machine, concurrency, hold, polls…
-npm run verify-catalog      # every catalog URL answers 206 with byte-range support
-npm run loadtest            # 10 / 25 / 50 headless viewers + chaos; reports p50/p95/p99 propagation
-npm run loadtest -- --users=10 --seconds=30 --netdelay=15 --jitter=10   # emulated network
-npm run build && npm run e2e   # 10+ real Chrome pages with real <video>: drift, recovery, late join, reconnect
+```
+ client ──control(play/pause/seek)──▶ server ──state{anchor, seq}──▶ every client
+                                       │
+                          one authoritative anchor per room
 ```
 
-Measured results, test conditions and caveats are in **[docs/LATENCY.md](docs/LATENCY.md)**.
+1. **One anchor.** The server keeps `{ videoId, status, anchorPos, anchorServerTime, seq }`. The playhead at any moment is `anchorPos + (serverNow − anchorServerTime)` while playing. A late joiner or a reconnecting client needs just one message to be correct.
+2. **Synced clocks.** Each client runs NTP-style pings and keeps the median offset of its lowest-RTT samples, so everyone evaluates the anchor on the server's clock.
+3. **Controls are intents.** `play`, `pause` and `seek` are idempotent, so two people pressing pause together produce one change. The server orders everything with `seq`, and clients drop anything stale. Playback starts ~180 ms in the future so everyone begins at the same instant.
+4. **Drift loop** (every 250 ms): under 50 ms do nothing; up to 400 ms nudge `playbackRate` by 3–12 % (no visible jump); beyond that, hard-seek.
+5. **Failure handling:** heartbeats, 30 s seat grace on reconnect, rate limits, payload caps and input sanitising. The full table is in [docs/LATENCY.md](docs/LATENCY.md).
 
-`npm run e2e` needs Google Chrome installed and a small local clip at `server/media/test-clip.mp4` (see the doc).
-
-## Layout
+## Project layout
 
 ```
-shared/    protocol types, sync math, catalog            (used by server, client, tests, bots)
+shared/    protocol types, sync math and the movie catalog (used by server, client, tests, bots)
 server/    Express + ws; src/rooms.ts is the room state machine
-client/    Vite + React + TypeScript; src/net/ (socket, sync engine), src/components/, src/styles/
+client/    Vite + React + TypeScript; net/ (socket, sync engine), components/, styles/
 scripts/   loadtest.ts, e2e-drift.ts, verify-catalog.ts
-docs/      LATENCY.md and raw JSON results
+docs/      LATENCY.md and the raw JSON results
 ```
 
-## Notes and limits
+**Stack:** Node, Express, `ws`, React, Vite, TypeScript, Zustand, Fuse.js, Vitest and Playwright. Fonts (Big Shoulders Display, Instrument Sans, DM Mono) are bundled, so the app works offline apart from the video itself.
 
-- Rooms live in server memory; restarting the server closes them. There are no accounts. A viewer is a name and a seat color.
-- Video streams straight from archive.org, so playback needs internet. Drop your own files in `server/media/` to serve them from the LAN (they are available at `/media/<file>`).
-- Browsers require a tap before playing with sound; if a device blocks autoplay the stage shows **Tap to join the screening**.
-- Posters are generated typography, not artwork, so there are no image assets to license.
+## Troubleshooting
+
+| Problem | Fix |
+| --- | --- |
+| `npm start` says the port is in use | Run `PORT=4010 npm start`, or stop whatever is using port 4000. |
+| A friend can't open the Network link | Make sure you're on the same Wi-Fi and your firewall allows Node on port 4000. |
+| The screen says "Tap to join the screening" | Your browser blocks sound until you tap once. Tap it and you're in. |
+| The video stays black | Check your internet connection (videos stream from archive.org), or try another title. |
+| `npm run e2e` fails | It needs Google Chrome and a small clip: `curl -L -o server/media/test-clip.mp4 https://download.blender.org/durian/trailer/sintel_trailer-480p.mp4` |
+
+## Notes
+
+- Rooms live in server memory, so restarting the server closes them. There are no accounts; a viewer is a name and a seat color, and the name is never saved between visits.
+- Posters are generated typography, not artwork, so there are no image licenses to worry about.
+- Film licences: Blender open movies are CC BY (Blender Foundation); the other titles are public domain.
+
+---
+
+<div align="center">
+
+Made with care by **Dharoon Balajii** · **VinnovateIT Recruitment'26**
+
+</div>
