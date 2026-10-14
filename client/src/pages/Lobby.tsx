@@ -12,7 +12,7 @@ interface Props {
 
 export function Lobby({ invite, onJoined }: Props) {
   const saved = useMemo(loadProfile, []);
-  const [name, setName] = useState(saved?.name ?? '');
+  const [name, setName] = useState('');
   const [color, setColor] = useState(saved?.color ?? AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)]);
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
@@ -99,7 +99,7 @@ export function Lobby({ invite, onJoined }: Props) {
               className="field__input"
               value={name}
               maxLength={24}
-              autoComplete="nickname"
+              autoComplete="off"
               placeholder="Maya"
               onChange={(e) => { setName(e.target.value); setError(''); }}
             />

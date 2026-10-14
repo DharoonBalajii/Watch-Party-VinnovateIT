@@ -18,10 +18,13 @@ const seat = {
   set(k: string, v: string) { try { sessionStorage.setItem(k, v); } catch { /* ignore */ } },
 };
 
+// The name is never pre-filled on a fresh visit: it lives in sessionStorage so a refresh
+// inside a room keeps your seat, but opening the site again always asks who you are.
+try { localStorage.removeItem('wp:profile'); } catch { /* ignore */ }
 export function loadProfile(): Profile | null {
-  try { return JSON.parse(safe.get('wp:profile') ?? 'null'); } catch { return null; }
+  try { return JSON.parse(seat.get('wp:profile') ?? 'null'); } catch { return null; }
 }
-export function saveProfile(p: Profile) { safe.set('wp:profile', JSON.stringify(p)); }
+export function saveProfile(p: Profile) { seat.set('wp:profile', JSON.stringify(p)); }
 
 type Listener = () => void;
 
