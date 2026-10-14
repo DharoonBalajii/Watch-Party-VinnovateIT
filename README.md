@@ -8,7 +8,7 @@ Watch movies in lockstep with friends. Start a room, share the link, and everyon
 
 **Built by [Dharoon Balajii](https://github.com/DharoonBalajii) for VinnovateIT Recruitment'26**
 
-![Node](https://img.shields.io/badge/node-%E2%89%A5%2020.19-3c873a) ![React](https://img.shields.io/badge/React-19-61dafb) ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6) ![Tests](https://img.shields.io/badge/tests-37%20passing-4ee6b5) ![p95 latency](https://img.shields.io/badge/control%20latency%20p95-3%20ms-ffd84a) ![drift](https://img.shields.io/badge/max%20drift-83%20ms-ff5c8a)
+![Node](https://img.shields.io/badge/node-%E2%89%A5%2020.19-3c873a) ![React](https://img.shields.io/badge/React-19-61dafb) ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6) ![p95 latency](https://img.shields.io/badge/control%20latency%20p95-3%20ms-ffd84a) ![drift](https://img.shields.io/badge/max%20drift-83%20ms-ff5c8a)
 
 </div>
 
