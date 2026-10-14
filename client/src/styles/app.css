@@ -24,10 +24,13 @@
 }
 @keyframes flicker { 0%, 100% { opacity: 0.9; } 46% { opacity: 1; } 50% { opacity: 0.72; } 54% { opacity: 1; } }
 .lobby__top { grid-area: top; display: flex; align-items: center; justify-content: space-between; }
+.credits { display: flex; align-items: flex-start; gap: 28px; }
 .nametag { display: grid; justify-items: center; min-width: 190px; border-radius: 10px; background: #fff; color: var(--ink); overflow: hidden; transform: rotate(1.6deg); box-shadow: 0 14px 26px -12px rgba(6, 6, 70, 0.7); }
+.nametag--club { transform: rotate(-1.4deg); }
+.nametag--club .nametag__top { background: var(--ultra-deep); }
 .nametag__top { width: 100%; padding: 3px 0; background: var(--flamingo); color: #fff; text-align: center; font-size: 10px; font-weight: 500; letter-spacing: 0.22em; text-transform: uppercase; }
-.nametag__name { padding: 6px 16px 0; font-family: var(--font-display); font-weight: 900; font-size: 26px; line-height: 1; text-transform: uppercase; }
-.nametag__club { padding-bottom: 7px; font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ultra-deep); }
+.nametag__name { padding: 6px 16px 7px; font-family: var(--font-display); font-weight: 900; font-size: 26px; line-height: 1; text-transform: uppercase; }
+.nametag__club { padding-bottom: 8px; margin-top: -4px; font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ultra-deep); }
 .lobby__hero { grid-area: hero; align-self: center; padding-block: 28px; }
 .lobby__hero .eyebrow { color: rgba(255, 255, 255, 0.78); }
 .lobby__title {
@@ -97,6 +100,9 @@
 @media (max-width: 940px) {
   .lobby { grid-template-columns: 1fr; grid-template-areas: 'top' 'hero' 'ticket'; padding-bottom: 48px; }
   .lobby__title { font-size: clamp(56px, 17vw, 120px); }
+  .credits { gap: 14px; }
+  .nametag { min-width: 0; }
+  .nametag__name { font-size: 20px; padding-inline: 10px; }
   .ticket { transform: none; animation: none; }
   .ticket { grid-template-columns: 1fr; }
   .ticket__stub { flex-direction: row; border-left: 0; border-top: 2.5px dashed rgba(15, 14, 36, 0.45); padding: 16px 20px; }
