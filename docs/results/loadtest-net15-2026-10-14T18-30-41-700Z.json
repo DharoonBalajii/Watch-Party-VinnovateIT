@@ -1,0 +1,166 @@
+{
+  "env": {
+    "node": "v26.0.0",
+    "platform": "darwin 25.5.0 (arm64)",
+    "cpu": "Apple M5 ×10",
+    "memGB": 17,
+    "transport": "loopback 127.0.0.1, ws without compression, TCP_NODELAY, emulated 15 ms ± 10 ms one-way each direction"
+  },
+  "secondsPerScenario": 20,
+  "results": [
+    {
+      "users": 10,
+      "chaos": false,
+      "seconds": 22,
+      "controlsSent": 166,
+      "controlsApplied": 115,
+      "controlsDeduped": 51,
+      "propagationMs": {
+        "n": 1053,
+        "p50": 32,
+        "p95": 46,
+        "p99": 50,
+        "max": 52,
+        "mean": 32.16
+      },
+      "senderAckMs": {
+        "n": 168,
+        "p50": 32,
+        "p95": 47,
+        "p99": 49,
+        "max": 50,
+        "mean": 31.98
+      },
+      "eventLoopLagMs": {
+        "p95": 5.89,
+        "max": 7.96
+      },
+      "outOfOrderStates": 0,
+      "converged": true,
+      "liveClients": 10,
+      "serverRssMB": 87
+    },
+    {
+      "users": 50,
+      "chaos": false,
+      "seconds": 22,
+      "controlsSent": 166,
+      "controlsApplied": 99,
+      "controlsDeduped": 67,
+      "propagationMs": {
+        "n": 4949,
+        "p50": 34,
+        "p95": 47,
+        "p99": 50,
+        "max": 53,
+        "mean": 33.54
+      },
+      "senderAckMs": {
+        "n": 168,
+        "p50": 33,
+        "p95": 46,
+        "p99": 49,
+        "max": 50,
+        "mean": 32.55
+      },
+      "eventLoopLagMs": {
+        "p95": 5.94,
+        "max": 7.64
+      },
+      "outOfOrderStates": 0,
+      "converged": true,
+      "liveClients": 50,
+      "serverRssMB": 79
+    },
+    {
+      "users": 12,
+      "chaos": true,
+      "seconds": 21,
+      "controlsSent": 166,
+      "controlsApplied": 124,
+      "controlsDeduped": 70,
+      "propagationMs": {
+        "n": 1373,
+        "p50": 32,
+        "p95": 45,
+        "p99": 48,
+        "max": 51,
+        "mean": 32.32
+      },
+      "senderAckMs": {
+        "n": 196,
+        "p50": 33,
+        "p95": 45,
+        "p99": 47,
+        "max": 48,
+        "mean": 32.33
+      },
+      "eventLoopLagMs": {
+        "p95": 5.89,
+        "max": 8.45
+      },
+      "outOfOrderStates": 0,
+      "converged": true,
+      "liveClients": 5,
+      "chaosEvents": {
+        "reconnects": 7,
+        "lateJoins": 7,
+        "concurrentBursts": 6
+      },
+      "lateJoin": {
+        "checks": 7,
+        "ok": 7,
+        "maxPosErrMs": 0
+      },
+      "serverRssMB": 79
+    },
+    {
+      "users": 35,
+      "chaos": true,
+      "seconds": 22,
+      "controlsSent": 166,
+      "controlsApplied": 127,
+      "controlsDeduped": 68,
+      "propagationMs": {
+        "n": 4351,
+        "p50": 32,
+        "p95": 46,
+        "p99": 49,
+        "max": 52,
+        "mean": 32.43
+      },
+      "senderAckMs": {
+        "n": 197,
+        "p50": 32,
+        "p95": 46,
+        "p99": 49,
+        "max": 49,
+        "mean": 32.57
+      },
+      "eventLoopLagMs": {
+        "p95": 5.93,
+        "max": 7.29
+      },
+      "outOfOrderStates": 0,
+      "converged": true,
+      "liveClients": 11,
+      "chaosEvents": {
+        "reconnects": 24,
+        "lateJoins": 7,
+        "concurrentBursts": 6
+      },
+      "lateJoin": {
+        "checks": 7,
+        "ok": 7,
+        "maxPosErrMs": 0
+      },
+      "serverRssMB": 81
+    },
+    {
+      "capacity": {
+        "refused": "This room is full (50 viewers).",
+        "reclaimed": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,198 @@
+{
+  "env": {
+    "node": "v26.0.0",
+    "platform": "darwin 25.5.0 (arm64)",
+    "cpu": "Apple M5 ×10",
+    "memGB": 17,
+    "transport": "loopback 127.0.0.1, ws without compression, TCP_NODELAY"
+  },
+  "secondsPerScenario": 20,
+  "results": [
+    {
+      "users": 10,
+      "chaos": false,
+      "seconds": 22,
+      "controlsSent": 166,
+      "controlsApplied": 110,
+      "controlsDeduped": 56,
+      "propagationMs": {
+        "n": 1008,
+        "p50": 1,
+        "p95": 2,
+        "p99": 2,
+        "max": 3,
+        "mean": 0.88
+      },
+      "senderAckMs": {
+        "n": 168,
+        "p50": 1,
+        "p95": 1,
+        "p99": 2,
+        "max": 2,
+        "mean": 0.83
+      },
+      "eventLoopLagMs": {
+        "p95": 5.75,
+        "max": 11.31
+      },
+      "outOfOrderStates": 0,
+      "converged": true,
+      "liveClients": 10,
+      "serverRssMB": 89
+    },
+    {
+      "users": 25,
+      "chaos": false,
+      "seconds": 22,
+      "controlsSent": 166,
+      "controlsApplied": 108,
+      "controlsDeduped": 58,
+      "propagationMs": {
+        "n": 2640,
+        "p50": 1,
+        "p95": 2,
+        "p99": 3,
+        "max": 4,
+        "mean": 1.06
+      },
+      "senderAckMs": {
+        "n": 168,
+        "p50": 1,
+        "p95": 2,
+        "p99": 3,
+        "max": 3,
+        "mean": 0.86
+      },
+      "eventLoopLagMs": {
+        "p95": 5.89,
+        "max": 7.94
+      },
+      "outOfOrderStates": 0,
+      "converged": true,
+      "liveClients": 25,
+      "serverRssMB": 79
+    },
+    {
+      "users": 50,
+      "chaos": false,
+      "seconds": 22,
+      "controlsSent": 166,
+      "controlsApplied": 107,
+      "controlsDeduped": 59,
+      "propagationMs": {
+        "n": 5341,
+        "p50": 1,
+        "p95": 3,
+        "p99": 4,
+        "max": 4,
+        "mean": 1.24
+      },
+      "senderAckMs": {
+        "n": 168,
+        "p50": 1,
+        "p95": 2,
+        "p99": 4,
+        "max": 4,
+        "mean": 0.93
+      },
+      "eventLoopLagMs": {
+        "p95": 5.91,
+        "max": 15.56
+      },
+      "outOfOrderStates": 0,
+      "converged": true,
+      "liveClients": 50,
+      "serverRssMB": 80
+    },
+    {
+      "users": 12,
+      "chaos": true,
+      "seconds": 22,
+      "controlsSent": 166,
+      "controlsApplied": 117,
+      "controlsDeduped": 78,
+      "propagationMs": {
+        "n": 1300,
+        "p50": 1,
+        "p95": 2,
+        "p99": 3,
+        "max": 3,
+        "mean": 0.84
+      },
+      "senderAckMs": {
+        "n": 197,
+        "p50": 1,
+        "p95": 2,
+        "p99": 3,
+        "max": 3,
+        "mean": 0.8
+      },
+      "eventLoopLagMs": {
+        "p95": 5.8,
+        "max": 8.46
+      },
+      "outOfOrderStates": 0,
+      "converged": true,
+      "liveClients": 4,
+      "chaosEvents": {
+        "reconnects": 8,
+        "lateJoins": 7,
+        "concurrentBursts": 6
+      },
+      "lateJoin": {
+        "checks": 7,
+        "ok": 7,
+        "maxPosErrMs": 0
+      },
+      "serverRssMB": 80
+    },
+    {
+      "users": 35,
+      "chaos": true,
+      "seconds": 22,
+      "controlsSent": 166,
+      "controlsApplied": 112,
+      "controlsDeduped": 83,
+      "propagationMs": {
+        "n": 3825,
+        "p50": 1,
+        "p95": 3,
+        "p99": 4,
+        "max": 5,
+        "mean": 1.23
+      },
+      "senderAckMs": {
+        "n": 197,
+        "p50": 1,
+        "p95": 3,
+        "p99": 4,
+        "max": 4,
+        "mean": 1.08
+      },
+      "eventLoopLagMs": {
+        "p95": 5.9,
+        "max": 8.08
+      },
+      "outOfOrderStates": 0,
+      "converged": true,
+      "liveClients": 9,
+      "chaosEvents": {
+        "reconnects": 26,
+        "lateJoins": 7,
+        "concurrentBursts": 6
+      },
+      "lateJoin": {
+        "checks": 7,
+        "ok": 7,
+        "maxPosErrMs": 0
+      },
+      "serverRssMB": 81
+    },
+    {
+      "capacity": {
+        "refused": "This room is full (50 viewers).",
+        "reclaimed": true
+      }
+    }
+  ]
+}
