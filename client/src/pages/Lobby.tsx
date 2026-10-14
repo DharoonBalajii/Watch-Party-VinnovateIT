@@ -71,7 +71,11 @@ export function Lobby({ invite, onJoined }: Props) {
       <div className="lobby__beam" aria-hidden />
       <header className="lobby__top">
         <span className="wordmark"><LogoMark /> Watch Party</span>
-        <span className="lobby__club mono">VinnovateIT</span>
+        <div className="nametag" aria-label="Created by Dharoon Balajii for VinnovateIT">
+          <span className="nametag__top mono">Hello, I’m</span>
+          <b className="nametag__name">Dharoon Balajii</b>
+          <span className="nametag__club mono">VinnovateIT</span>
+        </div>
       </header>
 
       <section className="lobby__hero">
@@ -157,13 +161,6 @@ export function Lobby({ invite, onJoined }: Props) {
         </div>
       </form>
 
-      <footer className="lobby__credit">
-        <div className="nametag" aria-label="Created by Dharoon Balajii for VinnovateIT">
-          <span className="nametag__top mono">Hello, I’m</span>
-          <b className="nametag__name">Dharoon Balajii</b>
-          <span className="nametag__club mono">VinnovateIT</span>
-        </div>
-      </footer>
     </main>
   );
 }
