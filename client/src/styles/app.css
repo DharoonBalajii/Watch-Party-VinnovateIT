@@ -4,8 +4,8 @@
   min-height: 100dvh;
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(360px, 520px);
-  grid-template-areas: 'top top' 'hero ticket';
-  grid-template-rows: auto 1fr;
+  grid-template-areas: 'top top' 'hero ticket' 'foot foot';
+  grid-template-rows: auto 1fr auto;
   column-gap: clamp(32px, 6vw, 96px);
   padding: 26px clamp(20px, 5vw, 76px) 56px;
   background: var(--ultra);
@@ -24,6 +24,12 @@
 }
 @keyframes flicker { 0%, 100% { opacity: 0.9; } 46% { opacity: 1; } 50% { opacity: 0.72; } 54% { opacity: 1; } }
 .lobby__top { grid-area: top; display: flex; align-items: center; justify-content: space-between; }
+.lobby__club { padding: 6px 14px; border-radius: 999px; border: 1.5px solid rgba(255, 255, 255, 0.6); font-size: 12.5px; letter-spacing: 0.16em; text-transform: uppercase; }
+.lobby__credit { grid-area: foot; display: flex; padding-top: 8px; }
+.nametag { display: grid; justify-items: center; gap: 2px; min-width: 250px; padding: 0 0 12px; border-radius: 12px; background: #fff; color: var(--ink); overflow: hidden; transform: rotate(-1.6deg); box-shadow: 0 18px 30px -14px rgba(6, 6, 70, 0.7); }
+.nametag__top { width: 100%; padding: 6px 0; background: var(--flamingo); color: #fff; text-align: center; font-size: 12px; font-weight: 500; letter-spacing: 0.22em; text-transform: uppercase; }
+.nametag__name { padding: 10px 22px 0; font-family: var(--font-display); font-weight: 900; font-size: 40px; line-height: 1; text-transform: uppercase; letter-spacing: 0.01em; }
+.nametag__club { font-size: 12.5px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ultra-deep); }
 .lobby__hero { grid-area: hero; align-self: center; padding-block: 28px; }
 .lobby__hero .eyebrow { color: rgba(255, 255, 255, 0.78); }
 .lobby__title {
@@ -91,7 +97,8 @@
 }
 
 @media (max-width: 940px) {
-  .lobby { grid-template-columns: 1fr; grid-template-areas: 'top' 'hero' 'ticket'; padding-bottom: 48px; }
+  .lobby { grid-template-columns: 1fr; grid-template-areas: 'top' 'hero' 'ticket' 'foot'; padding-bottom: 40px; }
+  .lobby__credit { justify-content: center; padding-top: 28px; }
   .lobby__title { font-size: clamp(56px, 17vw, 120px); }
   .ticket { transform: none; animation: none; }
   .ticket { grid-template-columns: 1fr; }
