@@ -503,3 +503,7 @@
 .wake__bar { width: 100%; max-width: 260px; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
 .wake__bar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--flamingo), var(--butter)); transition: width 0.15s linear; }
 .wake--awake .wake__title { color: var(--mint); }
+.ticket__help { justify-self: start; margin-top: -6px; padding: 4px 0; border: 0; background: none; color: var(--ink); font-size: 13.5px; font-weight: 600; opacity: 0.85; }
+.ticket__help u { text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.ticket__help:hover { opacity: 1; }
+.gate__wake { width: min(380px, 92vw); }
