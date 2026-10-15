@@ -21,6 +21,7 @@ export function Lobby({ invite, onJoined }: Props) {
   const [tearing, setTearing] = useState(false);
   const [stubCode, setStubCode] = useState(invite ?? '');
   const [asleep, setAsleep] = useState(false);
+  const [manualWake, setManualWake] = useState(false); // visitor pressed "Not working?" — start the countdown straight away
   const nameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { nameRef.current?.focus(); }, []);
@@ -145,8 +146,8 @@ export function Lobby({ invite, onJoined }: Props) {
             </div>
           </fieldset>
 
-          {asleep && !invite ? (
-            <WakeServer onAwake={() => { setAsleep(false); setBusy(false); }} />
+          {asleep ? (
+            <WakeServer key={manualWake ? 'm' : 'a'} autoStart={manualWake} onAwake={() => { setAsleep(false); setManualWake(false); setBusy(false); }} />
           ) : invite ? (
             <button className="btn btn--ink btn--xl" type="submit" disabled={busy}>Take your seat</button>
           ) : (
@@ -170,6 +171,11 @@ export function Lobby({ invite, onJoined }: Props) {
             </>
           )}
           <p className="ticket__error" role="alert" aria-live="polite">{error}</p>
+          {!asleep && (
+            <button type="button" className="ticket__help" onClick={() => { setManualWake(true); setAsleep(true); }}>
+              Not working? <u>Start the server</u>
+            </button>
+          )}
         </div>
 
         <div className="ticket__stub" aria-hidden>
