@@ -9,32 +9,37 @@ type Phase = 'asleep' | 'waking' | 'awake' | 'failed';
 
 interface Props {
   onAwake(): void;
+  /** start the countdown immediately instead of waiting for a click */
+  autoStart?: boolean;
 }
 
-export function WakeServer({ onAwake }: Props) {
+export function WakeServer({ onAwake, autoStart }: Props) {
   const [phase, setPhase] = useState<Phase>('asleep');
   const [left, setLeft] = useState(WAKE_SECONDS);
-  const cancel = useRef(false);
+  const run = useRef(0); // each wake attempt gets an id; stale loops (unmount, StrictMode, retry) stop themselves
 
-  useEffect(() => () => { cancel.current = true; }, []);
+  useEffect(() => {
+    if (autoStart) void wake();
+    return () => { run.current++; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function wake() {
-    cancel.current = false;
+    const id = ++run.current;
     setPhase('waking');
     setLeft(WAKE_SECONDS);
     const t0 = Date.now();
     const tick = window.setInterval(() => setLeft(Math.max(0, WAKE_SECONDS - (Date.now() - t0) / 1000)), 100);
     let ok = false;
-    while (!cancel.current && Date.now() - t0 < WAKE_SECONDS * 1000) {
+    while (run.current === id && Date.now() - t0 < WAKE_SECONDS * 1000) {
       // each attempt is both a wake-up call and a health check
       if (await pingServer(4000)) { ok = true; break; }
       await new Promise((r) => setTimeout(r, 1200));
     }
     window.clearInterval(tick);
-    if (cancel.current) return;
+    if (run.current !== id) return;
     if (ok) {
       setPhase('awake');
-      window.setTimeout(() => { if (!cancel.current) onAwake(); }, 1100);
+      window.setTimeout(() => { if (run.current === id) onAwake(); }, 1100);
     } else {
       setPhase('failed');
     }
