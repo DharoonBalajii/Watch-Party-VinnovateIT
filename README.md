@@ -8,13 +8,23 @@ Watch movies in lockstep with friends. Start a room, share the link, and everyon
 
 **Built by [Dharoon Balajii](https://github.com/DharoonBalajii) for VinnovateIT Recruitment'26**
 
+### 🔗 [Live demo → watch-party-vinnovateit-recruitment.netlify.app](https://watch-party-vinnovateit-recruitment.netlify.app/)
+
+<sub>The server sleeps when idle. If the page says it can't connect, press **Not working? Start the server** and wait up to 40 seconds.</sub>
+
 ![Node](https://img.shields.io/badge/node-%E2%89%A5%2020.19-3c873a) ![React](https://img.shields.io/badge/React-19-61dafb) ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6) ![p95 latency](https://img.shields.io/badge/control%20latency%20p95-3%20ms-ffd84a) ![drift](https://img.shields.io/badge/max%20drift-83%20ms-ff5c8a)
 
 </div>
 
 ---
 
-## Quick start
+## Try it live
+
+**[Open the live site](https://watch-party-vinnovateit-recruitment.netlify.app/)**, enter a name and press **Start a room**. To test syncing, open the invite link in a second tab or on your phone, then press play in one and watch the other follow.
+
+The server runs on a free tier and sleeps when idle. If you see "The server is asleep", press **Start the server** (or **Not working? Start the server** under the ticket) and wait up to 40 seconds while the countdown runs.
+
+## Quick start (run it yourself)
 
 You need **Node 20.19+** (check with `node -v`) and a modern browser. Nothing else: no database, no accounts, no API keys.
 
