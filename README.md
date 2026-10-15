@@ -111,6 +111,16 @@ docs/      LATENCY.md and the raw JSON results
 
 **Stack:** Node, Express, `ws`, React, Vite, TypeScript, Zustand, Fuse.js, Vitest and Playwright. Fonts (Big Shoulders Display, Instrument Sans, DM Mono) are bundled, so the app works offline apart from the video itself.
 
+## Deploy
+
+Watch Party has two parts: a **static client** and a **realtime server** (WebSockets). Netlify can host the client, but it can't run the server, so deploy the server somewhere that supports long-lived connections (Render's free tier works).
+
+1. **Server on Render:** New → Blueprint → pick this repo. `render.yaml` sets everything up. Copy the URL it gives you, e.g. `https://watch-party-server.onrender.com`.
+2. **Client on Netlify:** import the repo (settings come from `netlify.toml`), then add the environment variable `VITE_SERVER_URL` set to the Render URL, and redeploy.
+3. Optional: on Render, set `ALLOWED_ORIGIN` to your Netlify URL to restrict who can call the API.
+
+Free Render servers sleep when idle, so the first request after a quiet spell can take about 30 seconds.
+
 ## Troubleshooting
 
 | Problem | Fix |
