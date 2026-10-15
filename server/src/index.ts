@@ -26,6 +26,15 @@ export async function createApp(port = Number(process.env.PORT) || 4000, host = 
 
   app.disable('x-powered-by');
   app.use(express.json({ limit: '2kb' }));
+  // allow a separately hosted client (e.g. Netlify) to call the API; lock down with ALLOWED_ORIGIN
+  const allowed = process.env.ALLOWED_ORIGIN || '*';
+  app.use('/api', (req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', allowed);
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    if (req.method === 'OPTIONS') return res.sendStatus(204);
+    next();
+  });
 
   app.post('/api/rooms', (_req, res) => {
     const room = manager.create();
