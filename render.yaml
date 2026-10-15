@@ -1,0 +1,12 @@
+# One-click backend for the realtime server: https://render.com → New → Blueprint
+services:
+  - type: web
+    name: watch-party-server
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npx tsx server/src/index.ts
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 22
