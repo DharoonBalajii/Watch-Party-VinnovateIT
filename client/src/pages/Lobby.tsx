@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AVATAR_COLORS, formatRoomCode, normalizeRoomCode } from '@shared/protocol';
 import { navigate } from '../App';
-import { apiUrl, loadProfile, saveProfile } from '../net/client';
+import { apiUrl, loadProfile, pingServer, REMOTE_SERVER, saveProfile } from '../net/client';
+import { WakeServer } from '../components/WakeServer';
 import { cx } from '../util';
 
 interface Props {
@@ -19,9 +20,17 @@ export function Lobby({ invite, onJoined }: Props) {
   const [busy, setBusy] = useState(false);
   const [tearing, setTearing] = useState(false);
   const [stubCode, setStubCode] = useState(invite ?? '');
+  const [asleep, setAsleep] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { nameRef.current?.focus(); }, []);
+  // a hosted server on a free tier may be asleep: check quietly so the visitor sees the wake-up panel straight away
+  useEffect(() => {
+    if (!REMOTE_SERVER) return;
+    let live = true;
+    pingServer(3500).then((ok) => { if (live && !ok) setAsleep(true); });
+    return () => { live = false; };
+  }, []);
 
   const requireName = () => {
     if (!name.trim()) {
@@ -44,7 +53,8 @@ export function Lobby({ invite, onJoined }: Props) {
       setTearing(true);
       window.setTimeout(() => navigate(`/r/${code}`), window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 80 : 850);
     } catch {
-      setError('Couldn’t reach the server. Check your connection and try again.');
+      if (REMOTE_SERVER) setAsleep(true);
+      else setError('Couldn’t reach the server. Check your connection and try again.');
       setBusy(false);
     }
   }
@@ -61,7 +71,8 @@ export function Lobby({ invite, onJoined }: Props) {
       if (!res.ok) { setError(`Room ${formatRoomCode(c)} isn’t open. Check the code or start a new room.`); setBusy(false); return; }
       navigate(`/r/${c}`);
     } catch {
-      setError('Couldn’t reach the server. Check your connection and try again.');
+      if (REMOTE_SERVER) setAsleep(true);
+      else setError('Couldn’t reach the server. Check your connection and try again.');
       setBusy(false);
     }
   }
@@ -134,7 +145,9 @@ export function Lobby({ invite, onJoined }: Props) {
             </div>
           </fieldset>
 
-          {invite ? (
+          {asleep && !invite ? (
+            <WakeServer onAwake={() => { setAsleep(false); setBusy(false); }} />
+          ) : invite ? (
             <button className="btn btn--ink btn--xl" type="submit" disabled={busy}>Take your seat</button>
           ) : (
             <>
