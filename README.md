@@ -95,6 +95,72 @@ Measured, not estimated. Full methods and caveats are in **[docs/LATENCY.md](doc
 
 Loopback is a best case. Real Wi-Fi with packet loss was not tested.
 
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph Browser["Browser (React + Vite)"]
+    UI["UI<br/>Lobby · Player · Sync Strip<br/>Seats · Chat · Queue · Polls"]
+    Store["Zustand store"]
+    Net["Socket client<br/>reconnect + clock sync"]
+    Engine["Sync engine<br/>drift loop on &lt;video&gt;"]
+    UI --> Store
+    Net --> Store
+    Store --> Engine
+    Engine -->|reports drift| Net
+  end
+
+  subgraph Server["Realtime server (Node + Express + ws)"]
+    WS["WebSocket endpoint<br/>heartbeats · rate limits"]
+    Rooms["Room state machine<br/>playback anchor · members<br/>queue · polls · chat · host"]
+    API["REST API<br/>create / check room · health"]
+    WS --> Rooms
+    API --> Rooms
+  end
+
+  Shared[("shared/<br/>protocol types · sync math · catalog")]
+  Video[("archive.org<br/>public-domain video files")]
+
+  Net <-->|"JSON over WebSocket"| WS
+  UI -->|"POST /api/rooms"| API
+  Engine -.->|"streams video directly"| Video
+  Shared -.- Browser
+  Shared -.- Server
+```
+
+**Where it runs**
+
+```mermaid
+flowchart LR
+  User(["Viewer's browser"]) -->|static files| Netlify["Netlify<br/>React client"]
+  User <-->|"REST + WebSocket<br/>(VITE_SERVER_URL)"| Render["Render free tier<br/>Node realtime server"]
+  User -->|video bytes| Archive["archive.org"]
+  Render -. "sleeps when idle" .-> Wake["Wake-up countdown<br/>(Start the server button)"]
+```
+
+**What happens when someone presses play**
+
+```mermaid
+sequenceDiagram
+  participant A as Viewer A
+  participant S as Server (room)
+  participant B as Viewer B
+  participant C as Viewer C
+
+  A->>S: control { play }
+  Note over S: apply once (repeats are no-ops),<br/>bump seq, schedule start ~180 ms ahead
+  S-->>A: state { playing, anchor, seq }
+  S-->>B: state { playing, anchor, seq }
+  S-->>C: state { playing, anchor, seq }
+  Note over A,C: each client starts at the anchor time<br/>on the synced server clock
+  loop every 250 ms
+    B->>B: drift = currentTime − expected position
+    B->>B: nudge playbackRate, or seek if drift ≥ 400 ms
+  end
+  B->>S: report { drift, buffering }
+  S-->>A: health (drives seat gauges + Sync Strip)
+```
+
 ## How the sync works
 
 ```
