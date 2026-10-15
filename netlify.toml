@@ -1,0 +1,13 @@
+# Netlify hosts the static client only. The realtime server (WebSockets) must run elsewhere —
+# see README "Deploy". Set VITE_SERVER_URL in Netlify → Site settings → Environment variables.
+[build]
+  command = "npm install && npm run build"
+  publish = "client/dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
