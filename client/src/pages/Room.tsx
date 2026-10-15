@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CATALOG_BY_ID } from '@shared/catalog';
 import { formatRoomCode } from '@shared/protocol';
-import { leaveRoom, loadProfile, openRoom } from '../net/client';
+import { leaveRoom, loadProfile, openRoom, REMOTE_SERVER } from '../net/client';
+import { WakeServer } from '../components/WakeServer';
 import { seekBy, startTogether, togglePlay } from '../net/controls';
 import { useRoom } from '../store';
 import { cx } from '../util';
@@ -28,6 +29,13 @@ function LiveRoom({ code, profile }: { code: string; profile: NonNullable<Return
   const videoId = useRoom((s) => s.state.videoId);
   const reconnects = useRoom((s) => s.reconnects);
   const stageRef = useRef<HTMLElement>(null);
+  // still not connected after a few seconds on a separately hosted server → it is probably asleep
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!REMOTE_SERVER || status === 'live' || status === 'failed') { setSlow(false); return; }
+    const t = window.setTimeout(() => setSlow(true), 5000);
+    return () => window.clearTimeout(t);
+  }, [status]);
 
   useEffect(() => {
     openRoom(code, profile);
@@ -80,7 +88,13 @@ function LiveRoom({ code, profile }: { code: string; profile: NonNullable<Return
         </div>
       )}
       {status === 'connecting' || (status === 'idle') ? (
-        <div className="gate gate--inline"><span className="spinner spinner--lg" /><p className="mono">Taking your seat…</p></div>
+        <div className="gate gate--inline">
+          {slow ? (
+            <div className="gate__wake"><WakeServer autoStart onAwake={() => setSlow(false)} /></div>
+          ) : (
+            <><span className="spinner spinner--lg" /><p className="mono">Taking your seat…</p></>
+          )}
+        </div>
       ) : (
         <div className="room__body">
           <section className="stage-col" ref={stageRef} aria-label="Screening" style={{ ['--glow' as string]: videoId ? CATALOG_BY_ID[videoId]?.accent[0] : undefined }}>
