@@ -7,6 +7,15 @@ import { useRoom } from '../store';
 /** Backend origin. Empty = same origin (local dev / `npm start`); set VITE_SERVER_URL when the client is hosted separately (e.g. Netlify). */
 const SERVER = ((import.meta.env.VITE_SERVER_URL as string | undefined) ?? '').replace(/\/+$/, '');
 export const apiUrl = (path: string) => `${SERVER}${path}`;
+/** True when the backend is hosted separately (and may be asleep, e.g. Render's free tier). */
+export const REMOTE_SERVER = !!SERVER;
+/** Resolves true if the server answers its health check within `timeoutMs`. */
+export async function pingServer(timeoutMs = 5000): Promise<boolean> {
+  try {
+    const res = await fetch(apiUrl('/api/health'), { cache: 'no-store', signal: AbortSignal.timeout(timeoutMs) });
+    return res.ok;
+  } catch { return false; }
+}
 const wsUrl = () => {
   if (SERVER) return `${SERVER.replace(/^http/, 'ws')}/ws`;
   return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
