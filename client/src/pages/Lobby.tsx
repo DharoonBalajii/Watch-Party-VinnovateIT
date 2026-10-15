@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AVATAR_COLORS, formatRoomCode, normalizeRoomCode } from '@shared/protocol';
 import { navigate } from '../App';
-import { loadProfile, saveProfile } from '../net/client';
+import { apiUrl, loadProfile, saveProfile } from '../net/client';
 import { cx } from '../util';
 
 interface Props {
@@ -37,7 +37,7 @@ export function Lobby({ invite, onJoined }: Props) {
     if (!requireName()) return;
     setBusy(true); setError('');
     try {
-      const res = await fetch('/api/rooms', { method: 'POST' });
+      const res = await fetch(apiUrl('/api/rooms'), { method: 'POST' });
       if (!res.ok) throw new Error();
       const { code } = (await res.json()) as { code: string };
       setStubCode(code);
@@ -57,7 +57,7 @@ export function Lobby({ invite, onJoined }: Props) {
     if (c.length !== 6) { setError('Room codes have 6 characters, like KQTM-72.'); return; }
     setBusy(true); setError('');
     try {
-      const res = await fetch(`/api/rooms/${c}`);
+      const res = await fetch(apiUrl(`/api/rooms/${c}`));
       if (!res.ok) { setError(`Room ${formatRoomCode(c)} isn’t open. Check the code or start a new room.`); setBusy(false); return; }
       navigate(`/r/${c}`);
     } catch {

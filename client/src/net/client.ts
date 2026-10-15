@@ -4,6 +4,14 @@ import {
 import { estimateOffset, type ClockSample } from '@shared/sync';
 import { useRoom } from '../store';
 
+/** Backend origin. Empty = same origin (local dev / `npm start`); set VITE_SERVER_URL when the client is hosted separately (e.g. Netlify). */
+const SERVER = ((import.meta.env.VITE_SERVER_URL as string | undefined) ?? '').replace(/\/+$/, '');
+export const apiUrl = (path: string) => `${SERVER}${path}`;
+const wsUrl = () => {
+  if (SERVER) return `${SERVER.replace(/^http/, 'ws')}/ws`;
+  return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
+};
+
 export interface Profile { name: string; color: string }
 
 const tokenKey = (code: string) => `wp:token:${code}`;
@@ -54,8 +62,7 @@ export class RoomClient {
     this.closedByUs = false;
     const st = useRoom.getState();
     st.set({ status: this.everLive ? 'reconnecting' : 'connecting' });
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const ws = new WebSocket(`${proto}://${location.host}/ws`);
+    const ws = new WebSocket(wsUrl());
     this.ws = ws;
 
     ws.onopen = () => {
