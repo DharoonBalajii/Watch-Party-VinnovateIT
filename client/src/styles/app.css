@@ -484,3 +484,22 @@
   .seat__btn { width: 60px; height: 55px; }
   .pop__panel, .pop__panel--wide { position: fixed; top: 70px; left: 12px; right: 12px; width: auto; }
 }
+
+/* ═════════════ WAKE THE SERVER (free-tier cold start) ═════════════ */
+.wake { display: grid; justify-items: center; gap: 12px; padding: 22px 18px 20px; border-radius: 16px; background: var(--ink); color: var(--text); text-align: center; min-height: 250px; align-content: center; animation: pop-in 0.25s var(--ease); }
+.wake .btn--xl { background: var(--butter); color: var(--butter-ink); margin-top: 6px; }
+.wake .btn--xl:hover:not(:disabled) { background: #ffe273; }
+.wake :focus-visible { outline-color: var(--butter); }
+.wake__title { font-family: var(--font-display); font-weight: 900; font-size: 34px; line-height: 1; text-transform: uppercase; color: var(--butter); }
+.wake__text { max-width: 30ch; font-size: 14px; line-height: 1.45; color: var(--mist); }
+.wake__dial { --p: 0deg; position: relative; display: grid; place-items: center; width: 148px; height: 148px; border-radius: 50%; background: conic-gradient(from 0deg, rgba(255, 216, 74, 0.55) var(--p), rgba(255, 255, 255, 0.07) var(--p)); }
+.wake__dial::before { content: ''; position: absolute; inset: 9px; border-radius: 50%; background: var(--ink); }
+.wake__ring { position: absolute; inset: 0; border-radius: 50%; border: 3px solid rgba(245, 244, 255, 0.85); }
+.wake__ticks { position: absolute; inset: 0; background: linear-gradient(rgba(245, 244, 255, 0.4), rgba(245, 244, 255, 0.4)) center / 100% 1.5px no-repeat, linear-gradient(rgba(245, 244, 255, 0.4), rgba(245, 244, 255, 0.4)) center / 1.5px 100% no-repeat; }
+.wake__num { position: relative; font-family: var(--font-display); font-weight: 900; font-size: 74px; line-height: 1; color: var(--butter); text-shadow: 0 0 26px rgba(255, 216, 74, 0.35); animation: num-pop 0.4s var(--ease); }
+.wake__dial--done { background: var(--mint); }
+.wake__dial--done .wake__num { font-size: 52px; color: #04281d; text-shadow: none; padding-left: 6px; }
+.wake__stage { font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--mist); }
+.wake__bar { width: 100%; max-width: 260px; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+.wake__bar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--flamingo), var(--butter)); transition: width 0.15s linear; }
+.wake--awake .wake__title { color: var(--mint); }
