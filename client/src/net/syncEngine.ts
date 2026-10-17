@@ -1,52 +1,77 @@
 import { DRIFT, expectedPosition, planCorrection } from '@shared/sync';
-import { CATALOG_BY_ID } from '@shared/catalog';
 import { getClient } from './client';
-import { useRoom } from '../store';
+import type { MediaHandle } from './media';
+import { selectSource, useRoom } from '../store';
 
 /**
- * Keeps a <video> locked to the room's authoritative playback anchor.
+ * Keeps the room's player locked to the authoritative playback anchor.
  *  - paused → park on the anchor position
  *  - playing → start at the scheduled instant, then every tick:
  *      |drift| < 50 ms   leave alone
  *      < 400 ms          nudge playbackRate (±3–12 %), no visible jump
  *      ≥ 400 ms          hard seek (1.5 s cooldown so a slow client can't seek-storm)
+ *    YouTube can't vary its rate smoothly, so there it only seeks, past 350 ms.
  */
 export class SyncEngine {
   private timer = 0;
   private startTimer = 0;
   private lastSeekAt = 0;
   private lastBuffering = false;
-  private videoId: string | null = null;
   private corrections = 0;
   private seeks = 0;
   private lastMode: 'sync' | 'nudge' | 'seek' | 'idle' = 'idle';
   private cleanups: (() => void)[] = [];
+  private media: MediaHandle | null = null;
+  /** a freshly built player's first load is ours alone: don't make the room hold for it */
+  private quietUntil = 0;
+  private detach: (() => void) | null = null;
 
-  constructor(private video: HTMLVideoElement) {
-    const on = (t: keyof HTMLMediaElementEventMap, f: () => void) => {
-      video.addEventListener(t, f);
-      this.cleanups.push(() => video.removeEventListener(t, f));
-    };
-    on('waiting', () => this.syncBuffering());
-    on('stalled', () => this.syncBuffering());
-    on('playing', () => { this.syncBuffering(); useRoom.getState().set({ engine: { ...useRoom.getState().engine, needsGesture: false } }); });
-    on('canplay', () => { this.syncBuffering(); this.tick(); });
-    on('loadedmetadata', () => this.tick());
-    on('seeked', () => this.syncBuffering());
-    on('ended', () => {
-      const id = useRoom.getState().state.videoId;
-      if (id) getClient()?.send({ t: 'ended', videoId: id });
-    });
+  constructor() {
     const vis = () => { if (!document.hidden) this.tick(); };
     document.addEventListener('visibilitychange', vis);
     this.cleanups.push(() => document.removeEventListener('visibilitychange', vis));
     this.timer = window.setInterval(() => this.tick(), 250);
   }
 
+  /** point the engine at a player (or none while a new one is being built) */
+  attach(media: MediaHandle | null) {
+    this.detach?.();
+    this.detach = null;
+    this.media = media;
+    this.lastBuffering = false;
+    if (!media) return;
+    this.quietUntil = Date.now() + 6000;
+    this.detach = media.on((e) => {
+      if (e === 'ended') {
+        const id = useRoom.getState().state.videoId;
+        if (id) getClient()?.send({ t: 'ended', videoId: id });
+        return;
+      }
+      if (e === 'error') {
+        const src = selectSource(useRoom.getState());
+        if (src && src.kind !== 'catalog') useRoom.getState().toast(src.kind === 'youtube' ? 'YouTube won’t play this video here. The owner may have turned off embedding.' : 'That link didn’t load. It must point straight at a video file (.mp4 or .webm).', 'error');
+        return;
+      }
+      if (e === 'playing') useRoom.getState().set({ engine: { ...useRoom.getState().engine, needsGesture: false } });
+      this.syncBuffering();
+      if (e === 'ready') this.tick();
+    });
+    this.onState();
+  }
+
   destroy() {
+    this.detach?.();
     window.clearInterval(this.timer);
     window.clearTimeout(this.startTimer);
     this.cleanups.forEach((f) => f());
+  }
+
+  /** this viewer's player position in seconds (null with no player) */
+  time(): number | null { return this.media ? this.media.time() : null; }
+  /** YouTube's current streaming quality, when a YouTube video is up */
+  ytQuality(): string | null {
+    const m = this.media;
+    return m?.kind === 'youtube' ? (m as unknown as { quality(): string }).quality() || null : null;
   }
 
   /** call when a new playback state arrives so we react immediately (and schedule synced starts) */
@@ -62,8 +87,9 @@ export class SyncEngine {
   }
 
   async play() {
+    if (!this.media) return;
     try {
-      await this.video.play();
+      await this.media.play();
       useRoom.getState().set({ engine: { ...useRoom.getState().engine, needsGesture: false } });
     } catch (e) {
       if ((e as DOMException)?.name === 'NotAllowedError') {
@@ -73,8 +99,8 @@ export class SyncEngine {
   }
 
   private syncBuffering() {
-    const v = this.video;
-    const buffering = !v.paused ? v.readyState < 3 : v.readyState < 2 && !!v.currentSrc;
+    if (!this.media) return;
+    const buffering = this.media.isBuffering() && Date.now() > this.quietUntil;
     if (buffering !== this.lastBuffering) {
       this.lastBuffering = buffering;
       useRoom.getState().set({ engine: { ...useRoom.getState().engine, buffering } });
@@ -92,43 +118,47 @@ export class SyncEngine {
     const client = getClient();
     const store = useRoom.getState();
     const { state } = store;
-    const v = this.video;
-    if (!client || !state.videoId || store.status === 'failed') return;
-    const movie = CATALOG_BY_ID[state.videoId];
-    if (!movie) return;
+    const v = this.media;
+    if (!client || !v || !state.videoId || store.status === 'failed') return;
+    const src = selectSource(store);
+    if (!src) return;
+    if (this.lastBuffering !== (v.isBuffering() && Date.now() > this.quietUntil)) this.syncBuffering();
 
     const now = client.serverNow();
-    const dur = Number.isFinite(v.duration) && v.duration > 0 ? v.duration : movie.runtime;
-    const exp = expectedPosition(state, now, dur);
-    const wantPlay = state.status === 'playing' && now >= state.anchorServerTime && !(v.ended && exp >= dur - 0.2);
-    const cur = v.currentTime;
+    const known = v.duration();
+    const dur = Number.isFinite(known) ? known : src.runtime || Infinity;
+    const exp = expectedPosition(state, now, Number.isFinite(dur) ? dur : undefined);
+    // a screen share takes over the stage: keep the film parked underneath
+    const wantPlay = state.status === 'playing' && !store.share && now >= state.anchorServerTime && !(v.isEnded() && exp >= dur - 0.2);
+    const cur = v.time();
     let mode: 'sync' | 'nudge' | 'seek' | 'idle' = 'idle';
     let drift = cur - exp;
 
     if (!wantPlay) {
-      if (!v.paused) v.pause();
-      if (v.playbackRate !== 1) v.playbackRate = 1;
-      if (Math.abs(drift) > 0.06 && v.readyState > 0) v.currentTime = exp;
+      if (!v.isPaused()) v.pause();
+      if (v.rate() !== 1) v.setRate(1);
+      if (Math.abs(drift) > (v.canNudge ? 0.06 : 0.3) && v.hasMetadata()) v.seek(exp);
       drift = 0;
     } else {
-      if (v.paused) void this.play();
-      if (v.readyState < 3) {
+      if (v.isPaused()) void this.play();
+      if (!v.canPlayNow()) {
         mode = 'idle';
       } else {
-        const canSeek = Date.now() - this.lastSeekAt > DRIFT.SEEK_COOLDOWN_MS;
-        const plan = planCorrection(drift, exp, canSeek);
+        const cooldown = v.canNudge ? DRIFT.SEEK_COOLDOWN_MS : DRIFT.SEEK_ONLY_COOLDOWN_MS;
+        const canSeek = Date.now() - this.lastSeekAt > cooldown;
+        const plan = planCorrection(drift, exp, canSeek, v.canNudge);
         mode = plan.mode;
         if (plan.mode === 'seek') {
-          v.currentTime = plan.to + 0.04; // land slightly ahead: play-resume costs a few ms
-          v.playbackRate = 1;
+          v.seek(plan.to + v.seekLead); // land slightly ahead: play-resume costs a few ms
+          v.setRate(1);
           this.lastSeekAt = Date.now();
           this.seeks++;
           this.corrections++;
         } else if (plan.mode === 'nudge') {
-          if (Math.abs(v.playbackRate - plan.rate) > 0.005) v.playbackRate = plan.rate;
+          if (Math.abs(v.rate() - plan.rate) > 0.005) v.setRate(plan.rate);
           if (this.lastMode !== 'nudge') this.corrections++;
-        } else if (v.playbackRate !== 1) {
-          v.playbackRate = 1;
+        } else if (v.rate() !== 1) {
+          v.setRate(1);
         }
       }
     }
@@ -136,7 +166,7 @@ export class SyncEngine {
 
     const prev = store.engine;
     const next = {
-      ...prev, drift, mode, pos: v.currentTime, duration: dur, buffering: this.lastBuffering,
+      ...prev, drift, mode, pos: v.time(), duration: Number.isFinite(dur) ? dur : 0, buffering: this.lastBuffering,
       corrections: this.corrections, seeks: this.seeks,
     };
     if (
@@ -146,6 +176,6 @@ export class SyncEngine {
       useRoom.getState().set({ engine: next });
     }
     // expose for tests / debugging
-    (window as any).__wp = { drift, mode, pos: v.currentTime, exp, rate: v.playbackRate, paused: v.paused, seeks: this.seeks, state };
+    (window as any).__wp = { drift, mode, pos: v.time(), exp, rate: v.rate(), paused: v.isPaused(), seeks: this.seeks, state, kind: v.kind };
   }
 }

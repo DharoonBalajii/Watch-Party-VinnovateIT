@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { CATALOG, CATALOG_BY_ID } from '@shared/catalog';
+import { CATALOG } from '@shared/catalog';
+import { resolveSource } from '@shared/source';
 import { getClient } from '../net/client';
 import { useRoom } from '../store';
 import { cx, initials } from '../util';
@@ -71,7 +72,8 @@ function Composer({ onDone }: { onDone: () => void }) {
   const [opts, setOpts] = useState<string[]>(['', '']);
 
   useEffect(() => {
-    const titles = draft.map((id) => CATALOG_BY_ID[id]?.title).filter(Boolean) as string[];
+    const meta = useRoom.getState().meta;
+    const titles = draft.map((id) => resolveSource(id, meta[id])?.title).filter(Boolean) as string[];
     if (!titles.length) return;
     setOpts((prev) => {
       const have = new Set(prev.map((x) => x.trim()).filter(Boolean));
@@ -90,7 +92,9 @@ function Composer({ onDone }: { onDone: () => void }) {
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!valid) return;
-    const byTitle = new Map(CATALOG.map((m) => [m.title.toLowerCase(), m.id]));
+    const meta = useRoom.getState().meta;
+    const byTitle = new Map<string, string>(CATALOG.map((m) => [m.title.toLowerCase(), m.id]));
+    for (const id of draft) { const t = resolveSource(id, meta[id])?.title; if (t) byTitle.set(t.toLowerCase(), id); }
     getClient()?.send({ t: 'poll_create', question: q.trim(), options: options.map((label) => ({ label, videoId: byTitle.get(label.toLowerCase()) })) });
     onDone();
   };

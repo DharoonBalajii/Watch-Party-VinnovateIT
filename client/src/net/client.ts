@@ -3,6 +3,7 @@ import {
 } from '@shared/protocol';
 import { estimateOffset, type ClockSample } from '@shared/sync';
 import { useRoom } from '../store';
+import { Mesh, releaseLocalMedia, shareWasRequested, stopLocalScreen } from './rtc';
 
 /** Backend origin. Empty = same origin (local dev / `npm start`); set VITE_SERVER_URL when the client is hosted separately (e.g. Netlify). */
 const SERVER = ((import.meta.env.VITE_SERVER_URL as string | undefined) ?? '').replace(/\/+$/, '');
@@ -59,6 +60,8 @@ export class RoomClient {
   /** latest engine report is pulled from here once a second */
   getReport: (() => Omit<Extract<ClientMsg, { t: 'report' }>, 't' | 'rtt'>) | null = null;
   onState: Listener[] = [];
+  /** webcams / screen share peers; created once we know our member id */
+  mesh: Mesh | null = null;
 
   constructor(private code: string, private profile: Profile) {}
 
@@ -99,6 +102,9 @@ export class RoomClient {
 
   close() {
     this.closedByUs = true;
+    this.mesh?.close();
+    this.mesh = null;
+    releaseLocalMedia();
     window.clearInterval(this.pingTimer);
     window.clearInterval(this.reportTimer);
     window.clearTimeout(this.reconnectTimer);
@@ -126,6 +132,16 @@ export class RoomClient {
         this.offset = m.snap.serverNow - Date.now(); // rough until the first pongs land
         st.hydrate(m.snap);
         st.set({ status: 'live' });
+        if (this.mesh && this.mesh.youId !== m.snap.you) { this.mesh.close(); this.mesh = null; }
+        this.mesh ??= new Mesh(m.snap.you);
+        // the server forgets our camera and screen when the socket drops; tell it again
+        {
+          const s = useRoom.getState();
+          if (s.myAv.cam || s.myAv.mic) this.send({ t: 'av', cam: s.myAv.cam, mic: s.myAv.mic });
+          if (s.localScreen && !m.snap.share) this.send({ t: 'share', on: true });
+          else if (s.localScreen && m.snap.share?.by !== m.snap.you) stopLocalScreen();
+        }
+        this.mesh.sync();
         this.samples = [];
         for (let i = 0; i < 6; i++) window.setTimeout(() => this.ping(), i * 120);
         window.clearInterval(this.pingTimer);
@@ -165,7 +181,26 @@ export class RoomClient {
         this.onState.forEach((f) => f());
         break;
       }
-      case 'members': st.set({ members: m.members }); break;
+      case 'members': st.set({ members: m.members }); this.mesh?.sync(); break;
+      case 'meta': useRoom.setState((s) => ({ meta: { ...s.meta, [m.id]: m.meta } })); break;
+      case 'subs':
+        useRoom.setState((s) => {
+          const subs = { ...s.subs };
+          if (m.subs) subs[m.videoId] = m.subs; else delete subs[m.videoId];
+          return { subs };
+        });
+        break;
+      case 'upload':
+        useRoom.setState((s) => ({ uploads: [m.upload, ...s.uploads.filter((u) => u.id !== m.upload.id)].sort((a, b) => b.createdAt - a.createdAt) }));
+        break;
+      case 'share': {
+        const wasMine = st.share?.by === st.youId;
+        st.set({ share: m.share });
+        // someone else took the screen, or the host stopped ours
+        if (st.localScreen && ((m.share && m.share.by !== st.youId) || (!m.share && wasMine))) stopLocalScreen();
+        break;
+      }
+      case 'rtc': this.mesh?.signal(m.from, m.data); break;
       case 'health': st.set({ health: m.health, holding: m.holding }); break;
       case 'chat': st.addChat(m.msg); break;
       case 'typing':
@@ -179,10 +214,19 @@ export class RoomClient {
       case 'ready': st.set({ ready: m.ready }); this.onState.forEach((f) => f()); break;
       case 'error':
         if (m.fatal) { st.set({ status: 'failed', failMessage: m.message }); this.close(); }
-        else st.toast(m.message, 'error');
+        else {
+          if ((m.code === 'busy' || m.code === 'forbidden') && shareWasRequested() && st.share?.by !== st.youId) stopLocalScreen();
+          st.toast(m.message, 'error');
+        }
         break;
     }
   }
+}
+
+/** headers that prove to the HTTP API that we hold a seat in this room */
+export function seatHeaders(): Record<string, string> {
+  const code = useRoom.getState().code;
+  return { 'X-Room': code, 'X-Seat': seat.get(tokenKey(code)) ?? '' };
 }
 
 let current: RoomClient | null = null;

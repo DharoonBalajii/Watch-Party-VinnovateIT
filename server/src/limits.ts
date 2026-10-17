@@ -14,6 +14,8 @@ const DEFAULTS = {
   report: { rate: 4, burst: 8 },
   typing: { rate: 1, burst: 2 },
   ping: { rate: 6, burst: 20 },
+  // WebRTC signaling: an offer/answer plus a burst of ICE candidates per peer
+  rtc: { rate: 40, burst: 120 },
   other: { rate: 4, burst: 10 },
 } as const;
 

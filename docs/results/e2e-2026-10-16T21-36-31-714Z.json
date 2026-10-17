@@ -1,0 +1,71 @@
+{
+  "env": {
+    "chrome": "155.0.8059.82",
+    "cpu": "Apple M5 ×10",
+    "platform": "darwin 25.5.0",
+    "pages": 11,
+    "clip": "Sintel trailer 480p (4.4 MB) served locally"
+  },
+  "checks": [
+    {
+      "name": "10 viewers joined one room",
+      "ok": true,
+      "detail": "939 ms for all pages"
+    },
+    {
+      "name": "synchronized start after countdown",
+      "ok": true,
+      "detail": "every page playing past 0.3 s"
+    },
+    {
+      "name": "steady-state drift ≤ 500 ms",
+      "ok": true,
+      "detail": "|drift| p50 46.1 ms · p95 53 ms · max 87.2 ms over 1801 samples"
+    },
+    {
+      "name": "control propagation p95 ≤ 250 ms (browser to browser)",
+      "ok": true,
+      "detail": "p50 1 ms · p95 4 ms · max 42.1 ms (234 deliveries, 5689 ms burst)"
+    },
+    {
+      "name": "recover from +2 s drift",
+      "ok": true,
+      "detail": "back within 500 ms after 177 ms · modes used: nudge,seek,sync · max drift after 1.5 s 53.2 ms"
+    },
+    {
+      "name": "recover from -1.2 s drift",
+      "ok": true,
+      "detail": "back within 500 ms after 153 ms · modes used: sync,seek,nudge · max drift after 1.5 s 58.6 ms"
+    },
+    {
+      "name": "recover from +0.3 s drift",
+      "ok": true,
+      "detail": "back within 500 ms after 29 ms · modes used: nudge,sync · max drift after 1.5 s 43 ms"
+    },
+    {
+      "name": "seek storm: all viewers converge on the same state",
+      "ok": true,
+      "detail": "1 distinct seq across 10 pages (seq 64)"
+    },
+    {
+      "name": "drift ≤ 500 ms after seek storm",
+      "ok": true,
+      "detail": "p95 50.6 ms · max 65.4 ms"
+    },
+    {
+      "name": "pause stops every player",
+      "ok": true,
+      "detail": "10/10 paused within 700 ms"
+    },
+    {
+      "name": "late joiner lands in sync",
+      "ok": true,
+      "detail": "playing within 194 ms of opening the page · drift p95 49.2 ms"
+    },
+    {
+      "name": "reconnect keeps identity and resyncs",
+      "ok": true,
+      "detail": "same seat: true · drift after rejoin -94.6 ms"
+    }
+  ]
+}

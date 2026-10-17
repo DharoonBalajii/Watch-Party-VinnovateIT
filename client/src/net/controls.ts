@@ -1,6 +1,6 @@
-import { CATALOG_BY_ID } from '@shared/catalog';
+import { parseSourceInput, resolveSource } from '@shared/source';
 import { getClient } from './client';
-import { selectCanControl, useRoom } from '../store';
+import { selectCanControl, selectSource, useRoom } from '../store';
 import { roomPosition } from '../util';
 
 function guard(): boolean {
@@ -23,8 +23,7 @@ export function togglePlay() {
 export function seekTo(pos: number) {
   if (!guard()) return;
   const st = useRoom.getState();
-  const movie = st.state.videoId ? CATALOG_BY_ID[st.state.videoId] : null;
-  const dur = st.engine.duration || movie?.runtime || 0;
+  const dur = st.engine.duration || selectSource(st)?.runtime || Infinity;
   getClient()!.control({ op: 'seek', pos: Math.max(0, Math.min(dur, pos)) });
 }
 
@@ -42,9 +41,23 @@ export function loadMovie(videoId: string) {
 
 export function queueMovie(videoId: string) {
   getClient()?.send({ t: 'queue_add', videoId });
-  const m = CATALOG_BY_ID[videoId];
   const st = useRoom.getState();
+  const m = resolveSource(videoId, st.meta[videoId]);
   if (m) st.toast(st.state.videoId ? `Queued “${m.title}”` : `Loaded “${m.title}”`);
+}
+
+/** Play or queue a pasted YouTube / video-file link. Returns an error message, or null on success. */
+export function playLink(input: string, how: 'play' | 'queue'): string | null {
+  const parsed = parseSourceInput(input);
+  if ('error' in parsed) return parsed.error;
+  if (how === 'play') {
+    const st = useRoom.getState();
+    if (!selectCanControl(st)) return 'Only the host can change what’s playing. Queue it instead.';
+    loadMovie(parsed.id);
+  } else {
+    queueMovie(parsed.id);
+  }
+  return null;
 }
 
 export function sendReaction(emoji: string) {
@@ -75,4 +88,5 @@ if (typeof window !== 'undefined') {
     seq: () => useRoom.getState().state.seq,
     send: (m: Parameters<NonNullable<ReturnType<typeof getClient>>['send']>[0]) => getClient()?.send(m),
   };
+  (window as unknown as { __wpStore: unknown }).__wpStore = () => useRoom.getState();
 }

@@ -316,3 +316,150 @@ describe('chat, reactions & hardening', () => {
     expect(conns[1].all('reaction')).toHaveLength(1);
   });
 });
+
+describe('links, screen share and webrtc relay', () => {
+  it('loads a YouTube link, learns its title and broadcasts it', async () => {
+    const { setMetaFetcher } = await import('../src/rooms');
+    setMetaFetcher(async () => ({ title: 'Fetched title', author: 'Chan' }));
+    const { room, conns, recs } = setup(2);
+    room.handle(recs[0], ctl('a', { op: 'load', videoId: 'yt:dQw4w9WgXcQ' }));
+    expect(room.state.videoId).toBe('yt:dQw4w9WgXcQ');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(conns[1].last('meta')).toMatchObject({ id: 'yt:dQw4w9WgXcQ', meta: { title: 'Fetched title' } });
+  });
+  it('rejects ids that are neither catalog titles nor valid links', () => {
+    const { room, conns, recs } = setup(1);
+    room.handle(recs[0], ctl('a', { op: 'load', videoId: 'url:javascript:alert(1)' }));
+    expect(room.state.videoId).toBeNull();
+    expect(conns[0].last('error')!.code).toBe('unknown_video');
+  });
+  it('learns a link’s duration from reports and uses it to judge “ended”', () => {
+    const { room, recs } = setup(2);
+    room.handle(recs[0], ctl('a', { op: 'load', videoId: 'url:https://cdn.example.com/a.mp4' }));
+    room.handle(recs[0], ctl('b', { op: 'play' }));
+    room.handle(recs[1], { t: 'report', pos: 0, drift: 0, mode: 'sync', buffering: false, rtt: 10, duration: 600 });
+    expect(room.meta.get('url:https://cdn.example.com/a.mp4')?.duration).toBe(600);
+    clock += 10_000;
+    room.handle(recs[1], { t: 'ended', videoId: 'url:https://cdn.example.com/a.mp4' });
+    expect(room.state.status).toBe('playing'); // 10 s into a 600 s video: bogus
+  });
+  it('screen share pauses the film, blocks a second sharer and ends when the sharer drops', () => {
+    const { room, conns, recs } = setup(3);
+    room.handle(recs[0], ctl('a', { op: 'load', videoId: 'sintel' }));
+    room.handle(recs[0], ctl('b', { op: 'play' }));
+    room.handle(recs[1], { t: 'share', on: true });
+    expect(room.share?.by).toBe(recs[1].id);
+    expect(room.state.status).toBe('paused');
+    room.handle(recs[2], { t: 'share', on: true });
+    expect(conns[2].last('error')!.code).toBe('busy');
+    room.disconnect(recs[1].id, conns[1]);
+    expect(room.share).toBeNull();
+    expect(conns[0].last('share')!.share).toBeNull();
+  });
+  it('loading a film takes the screen back from a share', () => {
+    const { room, recs } = setup(2);
+    room.handle(recs[1], { t: 'share', on: true });
+    room.handle(recs[0], ctl('a', { op: 'load', videoId: 'sintel' }));
+    expect(room.share).toBeNull();
+  });
+  it('relays rtc signals only to the named, connected member', () => {
+    const { room, conns, recs } = setup(3);
+    room.handle(recs[0], { t: 'rtc', to: recs[2].id, data: { sid: 'x', description: { type: 'offer', sdp: 'v=0' } } });
+    expect(conns[2].last('rtc')).toMatchObject({ from: recs[0].id, data: { sid: 'x' } });
+    expect(conns[1].last('rtc')).toBeUndefined();
+    room.handle(recs[0], { t: 'rtc', to: recs[0].id, data: {} });
+    expect(conns[0].last('rtc')).toBeUndefined();
+  });
+  it('broadcasts camera and mic state and clears it on disconnect', () => {
+    const { room, conns, recs } = setup(2);
+    room.handle(recs[0], { t: 'av', cam: true, mic: false });
+    expect(conns[1].last('members')!.members.find((m) => m.id === recs[0].id)).toMatchObject({ cam: true, mic: false });
+    room.disconnect(recs[0].id, conns[0]);
+    expect(conns[1].last('members')!.members.find((m) => m.id === recs[0].id)!.cam).toBe(false);
+  });
+});
+
+describe('ICE servers', () => {
+  it('falls back to public STUN, and signs short-lived TURN credentials when configured', async () => {
+    const { iceServers } = await import('../src/index');
+    expect(iceServers({})).toEqual([{ urls: 'stun:stun.l.google.com:19302' }]);
+    const out = iceServers({ TURN_HOST: 'watch.example.com', TURN_SECRET: 's3cret' }, 1_700_000_000_000);
+    const turn = out.find((s) => s.username)!;
+    expect(turn.username).toBe(`${1_700_000_000 + 12 * 3600}:watchparty`);
+    const { createHmac } = await import('node:crypto');
+    expect(turn.credential).toBe(createHmac('sha1', 's3cret').update(turn.username!).digest('base64'));
+  });
+});
+
+describe('host moderation', () => {
+  it('host can remove someone; they are told why and can’t rejoin from that seat', () => {
+    const { room, conns, recs } = setup(3);
+    const token = conns[2].last('welcome')!.token;
+    room.handle(recs[0], { t: 'kick', target: recs[2].id });
+    expect(room.members.has(recs[2].id)).toBe(false);
+    expect(conns[2].last('error')).toMatchObject({ code: 'kicked', fatal: true });
+    expect(conns[2].closed).toBe(true);
+    expect(conns[1].last('chat')!.msg.text).toMatch(/removed U2/);
+    const back = new FakeConn();
+    expect(room.join(back, { t: 'join', code: 'TEST22', name: 'U2', color: '#FF5C8A', token })).toBeNull();
+    expect(back.last('error')!.code).toBe('kicked');
+  });
+  it('only the host can remove people, and not themselves', () => {
+    const { room, conns, recs } = setup(2);
+    room.handle(recs[1], { t: 'kick', target: recs[0].id });
+    expect(room.members.has(recs[0].id)).toBe(true);
+    expect(conns[1].last('error')!.code).toBe('forbidden');
+    room.handle(recs[0], { t: 'kick', target: recs[0].id });
+    expect(room.members.has(recs[0].id)).toBe(true);
+  });
+  it('removing a screen sharer ends the share', () => {
+    const { room, recs } = setup(2);
+    room.handle(recs[1], { t: 'share', on: true });
+    room.handle(recs[0], { t: 'kick', target: recs[1].id });
+    expect(room.share).toBeNull();
+  });
+  it('a locked room turns away newcomers but lets members reconnect', () => {
+    const { room, conns, recs } = setup(2);
+    const token = conns[1].last('welcome')!.token;
+    room.handle(recs[0], { t: 'settings', settings: { locked: true } });
+    expect(conns[1].last('settings')!.settings.locked).toBe(true);
+    const stranger = new FakeConn();
+    expect(room.join(stranger, { t: 'join', code: 'TEST22', name: 'X', color: '#FF5C8A' })).toBeNull();
+    expect(stranger.last('error')!.code).toBe('room_locked');
+    room.disconnect(recs[1].id, conns[1]);
+    const again = new FakeConn();
+    expect(room.join(again, { t: 'join', code: 'TEST22', name: 'U1', color: '#FF5C8A', token })).not.toBeNull();
+    room.handle(recs[1], { t: 'settings', settings: { locked: false } });
+    expect(room.settings.locked).toBe(true); // only the host can unlock
+  });
+});
+
+describe('uploads and subtitles in a room', () => {
+  it('only plays uploads that belong to the room and are ready', async () => {
+    const { setUploadLookup } = await import('../src/rooms');
+    const up = { id: '0123456789abcdef', name: 'Trip.mp4', size: 10, status: 'processing' as const, progress: 0.5, createdAt: clock, by: 'x' };
+    setUploadLookup((id) => (id === up.id ? up : undefined));
+    const { room, conns, recs } = setup(2);
+    room.handle(recs[0], ctl('a', { op: 'load', videoId: 'up:0123456789abcdef' }));
+    expect(room.state.videoId).toBeNull();
+    expect(conns[0].last('error')!.code).toBe('not_ready');
+    const ready = { ...up, status: 'ready' as const, progress: 1, duration: 90 };
+    setUploadLookup(() => ready);
+    room.noteUpload(ready);
+    expect(conns[1].last('upload')!.upload.status).toBe('ready');
+    room.handle(recs[0], ctl('b', { op: 'load', videoId: 'up:0123456789abcdef' }));
+    expect(room.state.videoId).toBe('up:0123456789abcdef');
+    expect(room.meta.get('up:0123456789abcdef')).toMatchObject({ title: 'Trip.mp4', duration: 90 });
+    setUploadLookup(() => undefined);
+  });
+  it('shares subtitles, serves them by id, and lets the adder remove them', () => {
+    const { room, conns, recs } = setup(2);
+    const info = room.setSubs('sintel', recs[1], 'English', 'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHi\n', 1);
+    expect(conns[0].last('subs')).toMatchObject({ videoId: 'sintel', subs: { label: 'English' } });
+    expect(room.subsVtt(info.id)).toContain('Hi');
+    expect(room.memberByToken(conns[1].last('welcome')!.token)?.id).toBe(recs[1].id);
+    room.handle(recs[1], { t: 'subs_clear', videoId: 'sintel' });
+    expect(conns[0].last('subs')!.subs).toBeNull();
+    expect(room.subsVtt(info.id)).toBeUndefined();
+  });
+});

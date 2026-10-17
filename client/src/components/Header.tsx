@@ -21,6 +21,7 @@ export function Header() {
   const status = useRoom((s) => s.status);
   const rtt = useRoom((s) => s.rtt);
   const engine = useRoom((s) => s.engine);
+  const locked = useRoom((s) => s.settings.locked);
   const connected = members.filter((m) => m.connected);
   const tone = status !== 'live' ? 'bad' : engine.buffering || Math.abs(engine.drift) >= 0.4 ? 'bad' : Math.abs(engine.drift) >= 0.12 ? 'warn' : 'ok';
 
@@ -32,6 +33,7 @@ export function Header() {
         <span className="mono rhead__label">Room</span>
         <b className="mono rhead__code">{formatRoomCode(code)}</b>
         <span className="rhead__count"><span className="dot dot--ok" /> {connected.length} watching</span>
+        {locked && <span className="rhead__lock mono" title="New people can’t join">Locked</span>}
       </div>
 
       <div className="rhead__right">
@@ -76,6 +78,7 @@ function Invite({ onDone }: { onDone: () => void }) {
 
 function Settings() {
   const settings = useRoom((s) => s.settings);
+  const [confirmKick, setConfirmKick] = useState<string | null>(null);
   const members = useRoom((s) => s.members);
   const youId = useRoom((s) => s.youId);
   const me = members.find((m) => m.id === youId);
@@ -99,6 +102,13 @@ function Settings() {
       </div>
       <div className="setting">
         <div>
+          <b>Lock the room</b>
+          <p>{settings.locked ? 'New people can’t join. Everyone already here can still reconnect.' : 'Anyone with the link or code can join.'}</p>
+        </div>
+        <button role="switch" aria-checked={settings.locked} aria-label="Lock the room" disabled={!isHost} className={cx('switch', settings.locked && 'is-on')} onClick={() => send({ locked: !settings.locked })}><i /></button>
+      </div>
+      <div className="setting">
+        <div>
           <b>Hold for stragglers</b>
           <p>Pause everyone while someone’s video is buffering, then resume together.</p>
         </div>
@@ -110,7 +120,12 @@ function Settings() {
           <li key={m.id} style={{ ['--c' as string]: m.color }} className={cx(!m.connected && 'is-off')}>
             <span className="avatar avatar--sm">{initials(m.name)}</span>
             <span className="people__name">{m.name}{m.id === youId ? ' (you)' : ''}{m.isHost ? ' · host' : ''}{!m.connected ? ' · away' : ''}</span>
-            {isHost && m.id !== youId && m.connected && <button className="btn btn--line btn--sm" onClick={() => getClient()?.send({ t: 'host_transfer', to: m.id })}>Make host</button>}
+            {isHost && m.id !== youId && m.connected && confirmKick !== m.id && <button className="btn btn--line btn--sm" onClick={() => getClient()?.send({ t: 'host_transfer', to: m.id })}>Make host</button>}
+            {isHost && m.id !== youId && (
+              confirmKick === m.id
+                ? <><button className="btn btn--sm btn--danger" onClick={() => { getClient()?.send({ t: 'kick', target: m.id }); setConfirmKick(null); }}>Remove</button><button className="btn btn--line btn--sm" onClick={() => setConfirmKick(null)}>Keep</button></>
+                : <button className="btn btn--line btn--sm" aria-label={`Remove ${m.name} from the room`} onClick={() => setConfirmKick(m.id)}>Remove</button>
+            )}
           </li>
         ))}
       </ul>

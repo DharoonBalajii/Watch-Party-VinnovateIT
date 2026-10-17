@@ -62,7 +62,7 @@ async function main() {
     const open = async (i: number): Promise<Page> => {
       const page = await context.newPage();
       await page.addInitScript(([n]) => {
-        localStorage.setItem('wp:profile', JSON.stringify({ name: n, color: '#4EE6B5' }));
+        sessionStorage.setItem('wp:profile', JSON.stringify({ name: n, color: '#4EE6B5' }));
         // in-page drift sampler (wall clock, so pages can be compared)
         (window as any).__samples = [];
         setInterval(() => {

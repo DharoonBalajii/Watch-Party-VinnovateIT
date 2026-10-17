@@ -14,7 +14,8 @@
     "test": "vitest run",
     "verify-catalog": "tsx scripts/verify-catalog.ts",
     "loadtest": "tsx scripts/loadtest.ts",
-    "e2e": "tsx scripts/e2e-drift.ts"
+    "e2e": "tsx scripts/e2e-drift.ts",
+    "e2e:av": "tsx scripts/e2e-av.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

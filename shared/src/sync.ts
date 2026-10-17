@@ -25,6 +25,9 @@ export const DRIFT = {
   MAX_RATE_DELTA: 0.12,
   /** don't hard-seek again within this window (prevents seek storms on slow clients) */
   SEEK_COOLDOWN_MS: 1500,
+  /** players that can't vary playbackRate smoothly (YouTube) tolerate more before seeking */
+  SEEK_ONLY_DEADBAND_S: 0.35,
+  SEEK_ONLY_COOLDOWN_MS: 3000,
 } as const;
 
 export type Correction =
@@ -36,8 +39,12 @@ export type Correction =
  * Decide how to fix `drift` (seconds, + = ahead of the room).
  * `target` is the position the player should be at right now.
  */
-export function planCorrection(drift: number, target: number, canSeek: boolean): Correction {
+export function planCorrection(drift: number, target: number, canSeek: boolean, canNudge = true): Correction {
   const abs = Math.abs(drift);
+  if (!canNudge) {
+    if (abs < DRIFT.SEEK_ONLY_DEADBAND_S) return { mode: 'sync', rate: 1 };
+    return canSeek ? { mode: 'seek', rate: 1, to: target } : { mode: 'nudge', rate: 1 };
+  }
   if (abs < DRIFT.DEADBAND_S) return { mode: 'sync', rate: 1 };
   if (abs >= DRIFT.HARD_SEEK_S && canSeek) return { mode: 'seek', rate: 1, to: target };
   // proportional nudge: 100% of drift closed in ~1/0.5 s, capped

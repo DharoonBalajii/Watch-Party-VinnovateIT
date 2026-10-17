@@ -1,4 +1,5 @@
 // Wire protocol shared by server, browser client, load-test bots and tests.
+import type { SourceMeta } from './source';
 
 export const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I / O
 export const ROOM_CODE_DIGITS = '23456789';
@@ -34,6 +35,38 @@ export interface Member {
   connected: boolean;
   isHost: boolean;
   joinedAt: number;
+  /** sending camera / microphone over WebRTC */
+  cam: boolean;
+  mic: boolean;
+  /** server time of this member's latest (re)connect: a change means their page may have reloaded */
+  since: number;
+}
+
+/** a subtitle file attached to one source in this room */
+export interface SubsInfo {
+  id: string;
+  label: string;
+  by: string;
+  cues: number;
+}
+
+/** a video someone uploaded into this room (mirrors the server's upload record) */
+export interface RoomUpload {
+  id: string;
+  name: string;
+  size: number;
+  status: 'uploading' | 'processing' | 'ready' | 'failed';
+  progress: number;
+  error?: string;
+  duration?: number;
+  createdAt: number;
+  by: string;
+}
+
+/** someone's screen is on the room's screen instead of the video */
+export interface ScreenShare {
+  by: string;
+  startedAt: number;
 }
 
 export interface MemberHealth {
@@ -81,6 +114,8 @@ export interface Poll {
 export interface RoomSettings {
   controlMode: ControlMode;
   holdForStragglers: boolean;
+  /** locked rooms turn away new viewers; people already in can still reconnect */
+  locked: boolean;
 }
 
 export interface ReadyCheck {
@@ -113,6 +148,11 @@ export interface Snapshot {
   ready: ReadyCheck | null;
   heat: HeatBucket[];
   holding: boolean;
+  share: ScreenShare | null;
+  meta: Record<string, SourceMeta>;
+  /** videoId → its subtitles */
+  subs: Record<string, SubsInfo>;
+  uploads: RoomUpload[];
 }
 
 // ───────── client → server ─────────
@@ -126,7 +166,7 @@ export type ClientMsg =
   | { t: 'join'; code: string; name: string; color: string; token?: string }
   | { t: 'ping'; c: number }
   | { t: 'control'; id: string; baseSeq: number; sentAt: number; ctl: ControlOp }
-  | { t: 'report'; pos: number; drift: number; mode: MemberHealth['mode']; buffering: boolean; rtt: number }
+  | { t: 'report'; pos: number; drift: number; mode: MemberHealth['mode']; buffering: boolean; rtt: number; duration?: number }
   | { t: 'ended'; videoId: string }
   | { t: 'chat'; text: string }
   | { t: 'typing' }
@@ -139,9 +179,16 @@ export type ClientMsg =
   | { t: 'poll_vote'; pollId: string; optionId: string }
   | { t: 'poll_close'; pollId: string }
   | { t: 'host_transfer'; to: string }
+  /** host only: remove someone from the room; they can't rejoin from that seat */
+  | { t: 'kick'; target: string }
   | { t: 'settings'; settings: Partial<RoomSettings> }
   | { t: 'ready_start' }
-  | { t: 'ready'; ready: boolean };
+  | { t: 'ready'; ready: boolean }
+  | { t: 'av'; cam: boolean; mic: boolean }
+  | { t: 'share'; on: boolean }
+  | { t: 'subs_clear'; videoId: string }
+  /** WebRTC signaling, relayed verbatim to one other member */
+  | { t: 'rtc'; to: string; data: unknown };
 
 // ───────── server → client ─────────
 export type ServerMsg =
@@ -158,6 +205,11 @@ export type ServerMsg =
   | { t: 'polls'; polls: Poll[] }
   | { t: 'settings'; settings: RoomSettings }
   | { t: 'ready'; ready: ReadyCheck | null }
+  | { t: 'share'; share: ScreenShare | null }
+  | { t: 'meta'; id: string; meta: SourceMeta }
+  | { t: 'subs'; videoId: string; subs: SubsInfo | null }
+  | { t: 'upload'; upload: RoomUpload }
+  | { t: 'rtc'; from: string; data: unknown }
   | { t: 'error'; code: string; message: string; fatal?: boolean };
 
 export const MAX_CHAT_LEN = 400;

@@ -1,11 +1,13 @@
-# Netlify hosts the static client only. The realtime server (WebSockets) must run elsewhere —
-# see README "Deploy". Set VITE_SERVER_URL in Netlify → Site settings → Environment variables.
+# Netlify hosts the static client only. The realtime server (WebSockets, uploads, TURN) runs on
+# AWS EC2 — see README "Deploy". VITE_SERVER_URL points the client at it; values here take
+# precedence over the Netlify dashboard.
 [build]
   command = "npm install && npm run build"
   publish = "client/dist"
 
 [build.environment]
   NODE_VERSION = "22"
+  VITE_SERVER_URL = "https://13-204-43-176.sslip.io"
 
 [[redirects]]
   from = "/*"

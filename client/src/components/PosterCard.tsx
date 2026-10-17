@@ -1,16 +1,20 @@
 import type { Movie } from '@shared/catalog';
+import { resolveSource, type Source } from '@shared/source';
 import { cx, fmtRuntime } from '../util';
 
-/** Generated typographic poster — no third-party artwork. */
-export function Poster({ movie, size = 'md' }: { movie: Movie; size?: 'mini' | 'md' | 'lg' }) {
+/** Generated typographic poster — no third-party artwork. YouTube sources show their thumbnail. */
+export function Poster({ movie, source, size = 'md' }: { movie?: Movie; source?: Source | null; size?: 'mini' | 'md' | 'lg' }) {
+  const src = source ?? (movie ? resolveSource(movie.id) : null);
+  if (!src) return null;
   // size the title so the longest word always fits on one line (no mid-word breaks)
-  const longest = Math.max(...movie.title.split(/\s+/).map((w) => w.length));
+  const longest = Math.max(...src.title.split(/\s+/).map((w) => w.length));
   const fit = Math.max(22, Math.min(34, Math.floor(150 / (longest * 0.5))));
   return (
-    <div className={cx('poster', `poster--${size}`)} style={{ ['--a' as string]: movie.accent[0], ['--b' as string]: movie.accent[1] }} aria-hidden>
-      <span className="poster__year mono">{movie.year}</span>
-      <span className="poster__title" style={size === 'mini' ? undefined : { fontSize: fit }}>{movie.title}</span>
-      {size !== 'mini' && <span className="poster__rt mono">{fmtRuntime(movie.runtime)}</span>}
+    <div className={cx('poster', `poster--${size}`, src.thumb && 'poster--thumb', src.kind !== 'catalog' && `poster--${src.kind}`)} style={{ ['--a' as string]: src.accent[0], ['--b' as string]: src.accent[1] }} aria-hidden>
+      {src.thumb && <img className="poster__img" src={src.thumb} alt="" loading="lazy" referrerPolicy="no-referrer" />}
+      <span className="poster__year mono">{src.kind === 'catalog' ? src.label : src.kind === 'youtube' ? 'YouTube' : src.kind === 'upload' ? 'Upload' : 'Link'}</span>
+      <span className="poster__title" style={size === 'mini' ? undefined : { fontSize: fit }}>{src.title}</span>
+      {size !== 'mini' && src.runtime > 0 && <span className="poster__rt mono">{fmtRuntime(src.runtime)}</span>}
     </div>
   );
 }

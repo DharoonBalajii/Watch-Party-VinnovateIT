@@ -5,3 +5,4 @@ dist
 server/media/*
 !server/media/.gitkeep
 docs/results/*.tmp
+.uploads/

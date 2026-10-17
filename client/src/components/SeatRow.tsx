@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { getClient } from '../net/client';
 import { useRoom } from '../store';
 import { cx, fmtMs, initials } from '../util';
+import { StreamVideo } from './StreamVideo';
+import { MicIcon } from './AvBar';
 
 export function SeatRow() {
   const members = useRoom((s) => s.members);
@@ -10,7 +12,11 @@ export function SeatRow() {
   const engine = useRoom((s) => s.engine);
   const ready = useRoom((s) => s.ready);
   const typing = useRoom((s) => s.typing);
+  const remote = useRoom((s) => s.remote);
+  const localCam = useRoom((s) => s.localCam);
+  const myAv = useRoom((s) => s.myAv);
   const [menu, setMenu] = useState<string | null>(null);
+  const [confirmKick, setConfirmKick] = useState<string | null>(null);
   const me = members.find((m) => m.id === youId);
 
   return (
@@ -25,11 +31,15 @@ export function SeatRow() {
         const isReady = ready?.active && ready.ready.includes(m.id);
         const clamp = Math.max(-0.5, Math.min(0.5, drift));
         const isTyping = (typing[m.id] ?? 0) > Date.now();
+        // your face goes on your seat back; remote mics play through the same element
+        const cam = you ? myAv.cam : m.cam && m.connected;
+        const mic = you ? myAv.mic : m.mic && m.connected;
+        const stream = you ? localCam : remote[m.id]?.cam;
         return (
-          <div role="listitem" key={m.id} className={cx('seat', `seat--${tone}`, you && 'is-you', !m.connected && 'is-off')} style={{ ['--c' as string]: m.color }} data-seat={m.id}>
+          <div role="listitem" key={m.id} className={cx('seat', `seat--${tone}`, you && 'is-you', !m.connected && 'is-off', cam && 'has-cam')} style={{ ['--c' as string]: m.color }} data-seat={m.id}>
             <button
               className="seat__btn"
-              onClick={() => setMenu(menu === m.id ? null : m.id)}
+              onClick={() => { setMenu(menu === m.id ? null : m.id); setConfirmKick(null); }}
               aria-label={`${m.name}${you ? ' (you)' : ''}${m.isHost ? ', host' : ''}${m.connected ? '' : ', reconnecting'}`}
               aria-expanded={menu === m.id}
             >
@@ -38,7 +48,9 @@ export function SeatRow() {
                 <path d="M4 26a6 6 0 0 1 6-6h2v30H8a4 4 0 0 1-4-4V26zM60 26a6 6 0 0 0-6-6h-2v30h4a4 4 0 0 0 4-4V26z" className="seat__arm" />
                 <path d="M10 34h44a4 4 0 0 1 4 4v8a6 6 0 0 1-6 6H12a6 6 0 0 1-6-6v-8a4 4 0 0 1 4-4z" className="seat__cushion" />
               </svg>
-              <span className="avatar">{initials(m.name)}</span>
+              {(cam || (mic && !you)) && stream && <StreamVideo stream={stream} muted={you} mirror={you} className={cx('seat__cam', !cam && 'is-audio')} />}
+              {!cam && <span className="avatar">{initials(m.name)}</span>}
+              {mic && <span className="seat__mic" title="Mic on" aria-hidden><MicIcon /></span>}
               {m.isHost && <span className="seat__crown" title="Host" aria-hidden>♛</span>}
               {isReady && <span className="seat__ready" aria-hidden>✓</span>}
               {buffering && m.connected && <span className="seat__buf" aria-hidden />}
@@ -56,6 +68,13 @@ export function SeatRow() {
                 <p className="seat__menu-title">{m.name}{m.isHost ? ' · host' : ''}</p>
                 {me?.isHost && !you && m.connected && (
                   <button role="menuitem" onClick={() => { getClient()?.send({ t: 'host_transfer', to: m.id }); setMenu(null); }}>Make host</button>
+                )}
+                {me?.isHost && !you && (
+                  confirmKick === m.id ? (
+                    <button role="menuitem" className="is-danger" onClick={() => { getClient()?.send({ t: 'kick', target: m.id }); setMenu(null); setConfirmKick(null); }}>Yes, remove {m.name}</button>
+                  ) : (
+                    <button role="menuitem" className="is-danger-quiet" onClick={() => setConfirmKick(m.id)}>Remove from room</button>
+                  )
                 )}
                 <p className="mono seat__menu-meta">
                   {m.connected ? `${fmtMs(drift)} · ${mode} · ${h?.rtt ? Math.round(h.rtt) : you ? Math.round(useRoom.getState().rtt) : 0} ms rtt` : 'Reconnecting — seat held'}

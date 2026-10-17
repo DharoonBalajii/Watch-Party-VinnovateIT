@@ -1,7 +1,9 @@
+import { useMemo } from 'react';
 import { create } from 'zustand';
 import type {
-  ChatMessage, HeatBucket, Member, MemberHealth, PlaybackState, Poll, QueueItem, ReadyCheck, RoomSettings, Snapshot,
+  ChatMessage, HeatBucket, Member, MemberHealth, PlaybackState, Poll, QueueItem, ReadyCheck, RoomSettings, RoomUpload, ScreenShare, Snapshot, SubsInfo,
 } from '@shared/protocol';
+import { resolveSource, type Source, type SourceMeta } from '@shared/source';
 import { percentile } from '@shared/sync';
 
 export type ConnStatus = 'idle' | 'connecting' | 'live' | 'reconnecting' | 'failed';
@@ -9,6 +11,10 @@ export type ConnStatus = 'idle' | 'connecting' | 'live' | 'reconnecting' | 'fail
 export interface Floater { id: string; from: string; emoji: string }
 export interface Toast { id: number; text: string; tone: 'info' | 'error' }
 export type RailTab = 'chat' | 'queue' | 'polls';
+
+export type DiscoverMode = 'browse' | 'link' | 'upload';
+export type YtQuality = 'auto' | 'hd1080' | 'hd720' | 'large';
+const pref = <T extends string>(k: string, d: T): T => { try { return (localStorage.getItem(k) as T) || d; } catch { return d; } };
 
 export interface Engine {
   drift: number; // seconds
@@ -20,6 +26,9 @@ export interface Engine {
   corrections: number;
   seeks: number;
 }
+
+/** what a member is sending us over WebRTC */
+export interface RemoteMedia { cam?: MediaStream; screen?: MediaStream }
 
 interface RoomStore {
   status: ConnStatus;
@@ -36,6 +45,19 @@ interface RoomStore {
   ready: ReadyCheck | null;
   heat: HeatBucket[];
   holding: boolean;
+  share: ScreenShare | null;
+  meta: Record<string, SourceMeta>;
+  subs: Record<string, SubsInfo>;
+  uploads: RoomUpload[];
+  /** this viewer's caption toggle and preferred YouTube quality */
+  ccOn: boolean;
+  ytQuality: YtQuality;
+  /** our own camera/mic and screen captures */
+  localCam: MediaStream | null;
+  localScreen: MediaStream | null;
+  /** what we've asked to send (flips immediately; the server echoes it on our Member) */
+  myAv: { cam: boolean; mic: boolean };
+  remote: Record<string, RemoteMedia>;
   rtt: number;
   offset: number;
   clockSamples: number;
@@ -47,6 +69,8 @@ interface RoomStore {
   tab: RailTab;
   unread: number;
   discoverOpen: boolean;
+  /** which Discover tab is open: films, YouTube, or uploads */
+  discoverMode: DiscoverMode;
   pollDraft: string[];
   reconnects: number;
 
@@ -73,13 +97,23 @@ const initial = () => ({
   members: [] as Member[],
   health: {} as Record<string, MemberHealth>,
   state: emptyState,
-  settings: { controlMode: 'everyone', holdForStragglers: true } as RoomSettings,
+  settings: { controlMode: 'everyone', holdForStragglers: true, locked: false } as RoomSettings,
   queue: [] as QueueItem[],
   polls: [] as Poll[],
   chat: [] as ChatMessage[],
   ready: null as ReadyCheck | null,
   heat: [] as HeatBucket[],
   holding: false,
+  share: null as ScreenShare | null,
+  meta: {} as Record<string, SourceMeta>,
+  subs: {} as Record<string, SubsInfo>,
+  uploads: [] as RoomUpload[],
+  ccOn: pref('wp:cc', 'on') === 'on',
+  ytQuality: (['auto', 'hd1080', 'hd720', 'large'] as string[]).includes(pref('wp:ytq', 'auto')) ? pref<YtQuality>('wp:ytq', 'auto') : 'auto',
+  localCam: null as MediaStream | null,
+  localScreen: null as MediaStream | null,
+  myAv: { cam: false, mic: false },
+  remote: {} as Record<string, RemoteMedia>,
   rtt: 0,
   offset: 0,
   clockSamples: 0,
@@ -91,6 +125,7 @@ const initial = () => ({
   tab: 'chat' as RailTab,
   unread: 0,
   discoverOpen: false,
+  discoverMode: 'browse' as DiscoverMode,
   pollDraft: [] as string[],
   reconnects: 0,
 });
@@ -105,6 +140,7 @@ export const useRoom = create<RoomStore>((set, get) => ({
     set({
       code: s.code, youId: s.you, members: s.members, health: s.health, state: s.state, settings: s.settings,
       queue: s.queue, polls: s.polls, chat: s.chat, ready: s.ready, heat: s.heat, holding: s.holding,
+      share: s.share, meta: s.meta, subs: s.subs ?? {}, uploads: s.uploads ?? [],
     }),
   addChat: (m) =>
     set((st) => ({
@@ -137,3 +173,16 @@ export const selectCanControl = (s: RoomStore) => {
   const me = s.members.find((m) => m.id === s.youId);
   return !!me && (s.settings.controlMode === 'everyone' || me.isHost);
 };
+
+/** the source on screen, resolved with whatever the server has learned about it */
+export const selectSource = (s: { state: PlaybackState; meta: Record<string, SourceMeta> }): Source | null =>
+  resolveSource(s.state.videoId, s.state.videoId ? s.meta[s.state.videoId] : undefined);
+
+/** React hooks around resolveSource: memoised so components don't re-render in a loop */
+export function useSourceById(id: string | null | undefined): Source | null {
+  const meta = useRoom((s) => (id ? s.meta[id] : undefined));
+  return useMemo(() => resolveSource(id, meta), [id, meta]);
+}
+export function useCurrentSource(): Source | null {
+  return useSourceById(useRoom((s) => s.state.videoId));
+}

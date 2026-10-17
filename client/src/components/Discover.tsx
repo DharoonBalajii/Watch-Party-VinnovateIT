@@ -2,9 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Fuse from 'fuse.js';
 import { CATALOG, CATALOG_BY_ID, GENRES, MOODS, type Movie } from '@shared/catalog';
 import { loadMovie, queueMovie } from '../net/controls';
-import { selectCanControl, useRoom } from '../store';
+import { selectCanControl, useRoom, type DiscoverMode } from '../store';
+import { LinkCard, looksLikeLink, UploadPanel, YouTubePanel } from './DiscoverPanels';
 import { cx } from '../util';
 import { PosterCard } from './PosterCard';
+
+
 
 const fuse = new Fuse(CATALOG.map((m) => ({ ...m, yearStr: String(m.year) })), {
   keys: [
@@ -33,6 +36,7 @@ function similarity(a: Movie, b: Movie) {
 
 export function Discover() {
   const open = useRoom((s) => s.discoverOpen);
+  const mode = useRoom((s) => s.discoverMode);
   const videoId = useRoom((s) => s.state.videoId);
   const queue = useRoom((s) => s.queue);
   const canControl = useRoom(selectCanControl);
@@ -42,7 +46,7 @@ export function Discover() {
   const [length, setLength] = useState<Length>('any');
   const [era, setEra] = useState<Era>('any');
   const inputRef = useRef<HTMLInputElement>(null);
-  const close = () => useRoom.getState().set({ discoverOpen: false });
+  const close = () => useRoom.getState().set({ discoverOpen: false, discoverMode: 'browse' });
 
   useEffect(() => {
     if (!open) return;
@@ -54,6 +58,7 @@ export function Discover() {
 
   const queuedIds = useMemo(() => new Set(queue.map((x) => x.videoId)), [queue]);
   const now = videoId ? CATALOG_BY_ID[videoId] : null;
+  const isLink = looksLikeLink(q);
   const filtering = !!q.trim() || genres.length > 0 || moods.length > 0 || length !== 'any' || era !== 'any';
 
   const results = useMemo(() => {
@@ -105,23 +110,32 @@ export function Discover() {
       <div className="drawer__panel">
         <header className="drawer__head">
           <div>
-            <p className="eyebrow">Discover</p>
-            <h2>What are we watching?</h2>
+            <p className="eyebrow">{TABS.find((t) => t.id === mode)!.eyebrow}</p>
+            <h2>{TABS.find((t) => t.id === mode)!.title}</h2>
           </div>
           <button className="iconbtn iconbtn--lg" onClick={close} aria-label="Close">✕</button>
         </header>
+        <div className="drawer__tabs" role="tablist" aria-label="What to put on">
+          {TABS.map((t) => (
+            <button key={t.id} role="tab" aria-selected={mode === t.id} className={cx('dtab', mode === t.id && 'is-on')} onClick={() => useRoom.getState().set({ discoverMode: t.id })}>{t.label}</button>
+          ))}
+        </div>
 
+        {mode === 'upload' ? <UploadPanel canControl={canControl} onDone={close} /> : mode === 'link' ? <YouTubePanel canControl={canControl} onDone={close} /> : (<>
         <div className="drawer__search">
           <input
             ref={inputRef}
             type="search"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search titles, genres, moods, directors — typos are fine"
-            aria-label="Search movies"
+            placeholder="Search the catalog, or paste a YouTube or video link"
+            aria-label="Search movies or paste a link"
           />
         </div>
 
+        {isLink ? (
+          <div className="drawer__body"><LinkCard input={q} canControl={canControl} onDone={() => { setQ(''); close(); }} /></div>
+        ) : (<>
         <div className="filters">
           <div className="chips" role="group" aria-label="Genre">
             {GENRES.map((g) => <button key={g} className={cx('chip', genres.includes(g) && 'is-on')} aria-pressed={genres.includes(g)} onClick={() => toggle(genres, setGenres, g)}>{g}</button>)}
@@ -164,7 +178,16 @@ export function Discover() {
             ))
           )}
         </div>
+        </>)}
+        </>)}
       </div>
     </div>
   );
 }
+
+const TABS: { id: DiscoverMode; label: string; eyebrow: string; title: string }[] = [
+  { id: 'browse', label: 'Films', eyebrow: 'Discover', title: 'What are we watching?' },
+  { id: 'link', label: 'YouTube', eyebrow: 'YouTube', title: 'Watch YouTube together' },
+  { id: 'upload', label: 'Upload a video', eyebrow: 'Your own video', title: 'Upload and watch' },
+];
+

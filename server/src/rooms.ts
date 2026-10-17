@@ -23,10 +23,14 @@ import {
   type QueueItem,
   type ReadyCheck,
   type RoomSettings,
+  type RoomUpload,
+  type ScreenShare,
   type ServerMsg,
+  type SubsInfo,
   type Snapshot,
 } from '../../shared/src/protocol';
 import { CATALOG_BY_ID } from '../../shared/src/catalog';
+import { isValidSourceId, resolveSource, UPLOAD_PREFIX, YT_PREFIX, type SourceMeta } from '../../shared/src/source';
 import { expectedPosition } from '../../shared/src/sync';
 import { RateLimiter } from './limits';
 
@@ -49,7 +53,32 @@ interface MemberRec {
   health: MemberHealth;
   bufferingSince: number | null;
   limiter: RateLimiter;
+  cam: boolean;
+  mic: boolean;
 }
+
+/** Looks up a YouTube video's title. Swappable so tests never touch the network. */
+export type MetaFetcher = (ytId: string) => Promise<SourceMeta | null>;
+const oembedCache = new Map<string, SourceMeta | null>();
+let metaFetcher: MetaFetcher = async (ytId) => {
+  if (oembedCache.has(ytId)) return oembedCache.get(ytId)!;
+  try {
+    const res = await fetch(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(`https://www.youtube.com/watch?v=${ytId}`)}`, { signal: AbortSignal.timeout(4000) });
+    const j = res.ok ? ((await res.json()) as { title?: string; author_name?: string }) : null;
+    const meta = j ? { title: clean(j.title, 120) || undefined, author: clean(j.author_name, 60) || undefined } : null;
+    if (oembedCache.size > 2000) oembedCache.clear();
+    oembedCache.set(ytId, meta);
+    return meta;
+  } catch {
+    return null;
+  }
+};
+export function setMetaFetcher(f: MetaFetcher) { metaFetcher = f; }
+
+/** Looks up an uploaded video by id (wired to the UploadStore by the server entry point). */
+export type UploadLookup = (id: string) => RoomUpload | undefined;
+let uploadLookup: UploadLookup = () => undefined;
+export function setUploadLookup(f: UploadLookup) { uploadLookup = f; }
 
 const id8 = () => randomBytes(4).toString('hex');
 const clean = (s: unknown, max: number) =>
@@ -67,12 +96,20 @@ export class Room {
   readonly code: string;
   readonly createdAt: number;
   state: PlaybackState;
-  settings: RoomSettings = { controlMode: 'everyone', holdForStragglers: true };
+  settings: RoomSettings = { controlMode: 'everyone', holdForStragglers: true, locked: false };
+  /** seat tokens of people the host removed */
+  private banned = new Set<string>();
   members = new Map<string, MemberRec>();
   queue: QueueItem[] = [];
   polls: Poll[] = [];
   chat: ChatMessage[] = [];
   ready: ReadyCheck | null = null;
+  share: ScreenShare | null = null;
+  /** videoId → subtitles (the WebVTT text is served over HTTP by id) */
+  subs = new Map<string, { info: SubsInfo; vtt: string }>();
+  uploads = new Map<string, RoomUpload>();
+  /** what we've learned about non-catalog sources (titles, durations) */
+  meta = new Map<string, SourceMeta>();
   /** videoId → bucket → count */
   heat = new Map<string, Map<number, number>>();
   autoHeld = false;
@@ -102,7 +139,7 @@ export class Room {
     for (const m of this.members.values()) if (m.conn && m.id !== exceptId) m.conn.send(raw);
   }
   private publicMember(m: MemberRec): Member {
-    return { id: m.id, name: m.name, color: m.color, connected: !!m.conn, isHost: m.isHost, joinedAt: m.joinedAt };
+    return { id: m.id, name: m.name, color: m.color, connected: !!m.conn, isHost: m.isHost, joinedAt: m.joinedAt, cam: m.cam, mic: m.mic, since: m.connectedAt };
   }
   private memberList(): Member[] {
     return [...this.members.values()].sort((a, b) => a.joinedAt - b.joinedAt).map((m) => this.publicMember(m));
@@ -115,9 +152,34 @@ export class Room {
   private pos(now = this.now()): number {
     return expectedPosition(this.state, now);
   }
+  /** best known length of a source in seconds (0 = unknown) */
+  private runtime(videoId: string | null): number {
+    if (!videoId) return 0;
+    return CATALOG_BY_ID[videoId]?.runtime ?? this.meta.get(videoId)?.duration ?? 0;
+  }
   private maxPos(videoId: string | null): number {
-    const m = videoId ? CATALOG_BY_ID[videoId] : null;
-    return m ? m.runtime * 1.02 + 5 : 0;
+    if (!videoId) return 0;
+    const rt = this.runtime(videoId);
+    return rt ? rt * 1.02 + 5 : 24 * 3600;
+  }
+  private title(videoId: string) {
+    return resolveSource(videoId, this.meta.get(videoId))?.title ?? 'next title';
+  }
+  private setMeta(id: string, patch: SourceMeta) {
+    const next = { ...this.meta.get(id), ...patch };
+    this.meta.set(id, next);
+    this.broadcast({ t: 'meta', id, meta: next });
+  }
+  /** fetch a YouTube title once per source; the answer is broadcast when it lands */
+  private learn(videoId: string) {
+    if (videoId.startsWith(UPLOAD_PREFIX)) {
+      const u = uploadLookup(videoId.slice(UPLOAD_PREFIX.length));
+      if (u && !this.meta.get(videoId)?.title) this.setMeta(videoId, { title: u.name, ...(u.duration ? { duration: u.duration } : {}) });
+      return;
+    }
+    if (!videoId.startsWith(YT_PREFIX) || this.meta.get(videoId)?.title) return;
+    if (!this.meta.has(videoId)) this.meta.set(videoId, {});
+    void metaFetcher(videoId.slice(YT_PREFIX.length)).then((m) => { if (m) this.setMeta(videoId, m); });
   }
   private canControl(m: MemberRec) {
     return this.settings.controlMode === 'everyone' || m.isHost;
@@ -156,6 +218,10 @@ export class Room {
       ready: this.ready,
       heat: this.heatList(),
       holding: this.autoHeld,
+      share: this.share,
+      meta: Object.fromEntries(this.meta),
+      subs: Object.fromEntries([...this.subs].map(([k, v]) => [k, v.info])),
+      uploads: [...this.uploads.values()].sort((a, b) => b.createdAt - a.createdAt),
     };
   }
   private heatList(): HeatBucket[] {
@@ -172,6 +238,11 @@ export class Room {
   join(conn: Conn, msg: Extract<ClientMsg, { t: 'join' }>): MemberRec | null {
     const now = this.now();
     let rec: MemberRec | undefined;
+    if (msg.token && this.banned.has(msg.token)) {
+      conn.send(JSON.stringify({ t: 'error', code: 'kicked', message: 'The host removed you from this room.', fatal: true } satisfies ServerMsg));
+      conn.close(4005, 'kicked');
+      return null;
+    }
     if (msg.token) rec = [...this.members.values()].find((m) => m.token === msg.token);
 
     if (rec) {
@@ -184,6 +255,11 @@ export class Room {
       if (stale && stale !== conn) stale.close(4000, 'replaced');
       if (away > 8000) this.sysChat(`${rec.name} is back`);
     } else {
+      if (this.settings.locked && this.members.size > 0) {
+        conn.send(JSON.stringify({ t: 'error', code: 'room_locked', message: 'This room is locked. Ask the host to unlock it, then try again.', fatal: true } satisfies ServerMsg));
+        conn.close(4006, 'locked');
+        return null;
+      }
       if (this.members.size >= MAX_MEMBERS) {
         conn.send(JSON.stringify({ t: 'error', code: 'room_full', message: `This room is full (${MAX_MEMBERS} viewers).`, fatal: true } satisfies ServerMsg));
         conn.close(4003, 'full');
@@ -203,6 +279,8 @@ export class Room {
         health: { pos: 0, drift: 0, mode: 'idle', buffering: false, rtt: 0 },
         bufferingSince: null,
         limiter: new RateLimiter(this.now),
+        cam: false,
+        mic: false,
       };
       this.members.set(rec.id, rec);
       this.sysChat(`${rec.name} joined`);
@@ -221,14 +299,18 @@ export class Room {
     rec.disconnectedAt = this.now();
     rec.bufferingSince = null;
     rec.health = { ...rec.health, buffering: false, mode: 'idle' };
+    rec.cam = false;
+    rec.mic = false;
+    if (this.share?.by === rec.id) this.setShare(null);
     this.healthDirty = true;
     if (this.ready?.active) this.checkReady();
     this.broadcast({ t: 'members', members: this.memberList() });
   }
 
-  private removeMember(rec: MemberRec) {
+  private removeMember(rec: MemberRec, note = `${rec.name} left`) {
     this.members.delete(rec.id);
-    this.sysChat(`${rec.name} left`);
+    if (this.share?.by === rec.id) this.setShare(null);
+    this.sysChat(note);
     if (rec.isHost) this.autoTransferHost('left');
     for (const p of this.polls) for (const o of p.options) o.votes = o.votes.filter((v) => v !== rec.id);
     for (const q of this.queue) q.votes = q.votes.filter((v) => v !== rec.id);
@@ -346,10 +428,27 @@ export class Room {
         this.sysChat(`${rec.name} made ${to.name} the host`);
         return this.broadcast({ t: 'members', members: this.memberList() });
       }
+      case 'kick': {
+        if (!rec.isHost) return this.error(rec, 'forbidden', 'Only the host can remove people.');
+        const target = this.members.get(String(msg.target));
+        if (!target || target.id === rec.id) return;
+        this.banned.add(target.token);
+        if (target.conn) {
+          this.emit(target, { t: 'error', code: 'kicked', message: 'The host removed you from this room.', fatal: true });
+          target.conn.close(4005, 'kicked');
+          target.conn = null;
+        }
+        if (this.ready?.active) this.ready = { ...this.ready, ready: this.ready.ready.filter((id) => id !== target.id) };
+        return this.removeMember(target, `${rec.name} removed ${target.name} from the room`);
+      }
       case 'settings': {
         if (!rec.isHost) return this.error(rec, 'forbidden', 'Only the host can change room settings.');
         const s = msg.settings ?? {};
         if (s.controlMode === 'host' || s.controlMode === 'everyone') this.settings.controlMode = s.controlMode;
+        if (typeof s.locked === 'boolean' && s.locked !== this.settings.locked) {
+          this.settings.locked = s.locked;
+          this.sysChat(s.locked ? `${rec.name} locked the room. New people can’t join.` : `${rec.name} unlocked the room`);
+        }
         if (typeof s.holdForStragglers === 'boolean') {
           this.settings.holdForStragglers = s.holdForStragglers;
           if (!s.holdForStragglers && this.autoHeld) this.releaseHold();
@@ -359,6 +458,42 @@ export class Room {
       case 'ready_start':
         if (!lim('other')) return;
         return this.readyStart(rec);
+      case 'av': {
+        if (!lim('other')) return;
+        rec.cam = !!msg.cam;
+        rec.mic = !!msg.mic;
+        return this.broadcast({ t: 'members', members: this.memberList() });
+      }
+      case 'share': {
+        if (!lim('other')) return;
+        if (!msg.on) {
+          if (this.share?.by === rec.id || (this.share && rec.isHost)) this.setShare(null);
+          return;
+        }
+        if (!this.canControl(rec)) return this.error(rec, 'forbidden', 'Only the host can put a screen up right now.');
+        const cur = this.share && this.members.get(this.share.by);
+        if (cur && cur.id !== rec.id) return this.error(rec, 'busy', `${cur.name} is sharing their screen. Ask them to stop first.`);
+        if (this.state.status === 'playing' && this.state.videoId) {
+          const now = this.now();
+          this.applyState({ videoId: this.state.videoId, status: 'paused', anchorPos: this.pos(now), anchorServerTime: now }, rec.id, 'pause');
+        }
+        this.setShare({ by: rec.id, startedAt: this.now() });
+        return this.sysChat(`${rec.name} is sharing their screen`);
+      }
+      case 'subs_clear': {
+        if (!lim('other')) return;
+        const cur = this.subs.get(String(msg.videoId));
+        if (!cur) return;
+        if (!(rec.isHost || cur.info.by === rec.id)) return this.error(rec, 'forbidden', 'Only the host or whoever added the subtitles can remove them.');
+        this.subs.delete(String(msg.videoId));
+        return this.broadcast({ t: 'subs', videoId: String(msg.videoId), subs: null });
+      }
+      case 'rtc': {
+        if (!lim('rtc')) return;
+        const to = this.members.get(String(msg.to));
+        if (!to?.conn || to.id === rec.id) return;
+        return this.emit(to, { t: 'rtc', from: rec.id, data: msg.data });
+      }
       case 'ready': {
         if (!this.ready?.active) return;
         const set = new Set(this.ready.ready);
@@ -369,6 +504,43 @@ export class Room {
         return this.checkReady();
       }
     }
+  }
+
+  /** uploads must belong to this room and be finished before they can play */
+  private uploadReady(videoId: string) {
+    if (!videoId.startsWith(UPLOAD_PREFIX)) return true;
+    const id = videoId.slice(UPLOAD_PREFIX.length);
+    return this.uploads.get(id)?.status === 'ready' && uploadLookup(id)?.status === 'ready';
+  }
+
+  // ───────── called by the HTTP side (uploads, subtitles) ─────────
+  /** the member holding this seat token, if any (HTTP requests prove membership with it) */
+  memberByToken(token: string) {
+    return token ? [...this.members.values()].find((m) => m.token === token) : undefined;
+  }
+  noteUpload(u: RoomUpload) {
+    const prev = this.uploads.get(u.id);
+    this.uploads.set(u.id, u);
+    this.broadcast({ t: 'upload', upload: u });
+    if (u.status === 'ready' && prev?.status !== 'ready') {
+      const who = this.members.get(u.by);
+      this.sysChat(`${who?.name ?? 'Someone'} uploaded “${u.name.replace(/\.[a-z0-9]{2,5}$/i, '')}”. It’s ready to play.`);
+    }
+  }
+  setSubs(videoId: string, rec: { id: string; name: string }, label: string, vtt: string, cues: number): SubsInfo {
+    const info: SubsInfo = { id: randomBytes(8).toString('hex'), label, by: rec.id, cues };
+    this.subs.set(videoId, { info, vtt });
+    this.broadcast({ t: 'subs', videoId, subs: info });
+    this.sysChat(`${rec.name} added subtitles: ${label}`);
+    return info;
+  }
+  subsVtt(id: string): string | undefined {
+    for (const s of this.subs.values()) if (s.info.id === id) return s.vtt;
+  }
+
+  private setShare(share: ScreenShare | null) {
+    this.share = share;
+    this.broadcast({ t: 'share', share });
   }
 
   private reject(rec: MemberRec, code: string, message: string) {
@@ -403,7 +575,8 @@ export class Room {
 
     switch (ctl.op) {
       case 'load': {
-        if (typeof ctl.videoId !== 'string' || !CATALOG_BY_ID[ctl.videoId]) return this.reject(rec, 'unknown_video', 'That title isn’t in the catalog.');
+        if (!isValidSourceId(ctl.videoId)) return this.reject(rec, 'unknown_video', 'That title or link can’t play here.');
+        if (!this.uploadReady(ctl.videoId)) return this.reject(rec, 'not_ready', 'That upload isn’t ready yet. It can play once it’s finished converting.');
         return this.loadVideo(ctl.videoId, rec.id, 'load', msg.id, msg.sentAt);
       }
       case 'play': {
@@ -445,6 +618,13 @@ export class Room {
     const now = this.now();
     this.ready = null;
     this.broadcast({ t: 'ready', ready: null });
+    this.learn(videoId);
+    // putting a film up takes the screen back from a screen share
+    if (this.share) {
+      const by = this.members.get(this.share.by);
+      this.setShare(null);
+      if (by) this.sysChat(`${by.name}’s screen share ended`);
+    }
     this.applyState(
       autoStart
         ? { videoId, status: 'playing', anchorPos: 0, anchorServerTime: now + COUNTDOWN_MS }
@@ -464,18 +644,18 @@ export class Room {
     const key = `${videoId}:${cur.seq}`;
     if (this.endedHandled === key) return; // 10 clients all report `ended`; first one wins
     // ignore bogus "ended" if the room clock says we're nowhere near the end
-    const m = CATALOG_BY_ID[videoId];
-    if (m && this.pos() < m.runtime * 0.9) return;
+    const rt = this.runtime(videoId);
+    if (rt && this.pos() < rt * 0.9) return;
     this.endedHandled = key;
     const next = this.sortedQueue()[0];
     if (next) {
       this.queue = this.queue.filter((q) => q.id !== next.id);
       this.broadcast({ t: 'queue', queue: this.sortedQueue() });
-      this.sysChat(`Up next: ${CATALOG_BY_ID[next.videoId]?.title ?? 'next title'}`);
+      this.sysChat(`Up next: ${this.title(next.videoId)}`);
       this.loadVideo(next.videoId, null, 'autoplay', undefined, undefined, true);
       this.endedHandled = `${next.videoId}:${this.state.seq}`;
     } else {
-      this.applyState({ videoId: cur.videoId, status: 'paused', anchorPos: m ? m.runtime : this.pos(), anchorServerTime: this.now() }, null, 'ended');
+      this.applyState({ videoId: cur.videoId, status: 'paused', anchorPos: rt || this.pos(), anchorServerTime: this.now() }, null, 'ended');
       this.endedHandled = `${videoId}:${this.state.seq}`;
     }
   }
@@ -491,6 +671,10 @@ export class Room {
       buffering,
       rtt: Math.max(0, Math.min(10000, num(msg.rtt))),
     };
+    // non-catalog sources: learn the length from the players (longest report wins)
+    const vid = this.state.videoId;
+    const d = num(msg.duration, 0);
+    if (vid && !CATALOG_BY_ID[vid] && d > 1 && d < 48 * 3600 && d > (this.meta.get(vid)?.duration ?? 0) + 0.5) this.setMeta(vid, { duration: Math.round(d * 10) / 10 });
     if (buffering && rec.bufferingSince === null) rec.bufferingSince = this.now();
     if (!buffering) rec.bufferingSince = null;
     if (prev.buffering !== buffering) this.evaluateHold();
@@ -502,7 +686,9 @@ export class Room {
     const now = this.now();
     // someone who just (re)joined is loading from cold — don't stop the whole room for that
     const settled = (m: MemberRec) => !!m.conn && now - m.connectedAt > 4000;
-    const stragglers = [...this.members.values()].filter((m) => settled(m) && m.bufferingSince !== null && now - m.bufferingSince >= 700);
+    // YouTube buffers on every start and seek, and nothing we do shortens it; give it longer
+    const patience = this.state.videoId?.startsWith(YT_PREFIX) ? 2000 : 700;
+    const stragglers = [...this.members.values()].filter((m) => settled(m) && m.bufferingSince !== null && now - m.bufferingSince >= patience);
     const anyBuffering = [...this.members.values()].some((m) => settled(m) && m.bufferingSince !== null);
     if (this.settings.holdForStragglers && this.state.status === 'playing' && !this.autoHeld && stragglers.length && !this.ready?.active && now >= this.holdCooldownUntil) {
       this.autoHeld = true;
@@ -557,7 +743,9 @@ export class Room {
 
   // ───────── queue ─────────
   private queueAdd(rec: MemberRec, videoId: string) {
-    if (typeof videoId !== 'string' || !CATALOG_BY_ID[videoId]) return this.error(rec, 'unknown_video', 'That title isn’t in the catalog.');
+    if (!isValidSourceId(videoId)) return this.error(rec, 'unknown_video', 'That title or link can’t play here.');
+    if (!this.uploadReady(videoId)) return this.error(rec, 'not_ready', 'That upload isn’t ready yet.');
+    this.learn(videoId);
     this.enqueue(videoId, rec.id, rec);
   }
   private enqueue(videoId: string, by: string, rec?: MemberRec) {
@@ -582,7 +770,7 @@ export class Room {
       .map((o) => ({
         id: id8(),
         label: clean(o?.label, 60),
-        videoId: typeof o?.videoId === 'string' && CATALOG_BY_ID[o.videoId] ? o.videoId : undefined,
+        videoId: isValidSourceId(o?.videoId) ? o.videoId : undefined,
         votes: [] as string[],
       }))
       .filter((o) => o.label);

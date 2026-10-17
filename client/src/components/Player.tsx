@@ -1,12 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import { CATALOG_BY_ID } from '@shared/catalog';
-import { getClient } from '../net/client';
+import { apiUrl, getClient } from '../net/client';
 import { SyncEngine } from '../net/syncEngine';
+import { VideoHandle, YouTubeHandle, type MediaHandle } from '../net/media';
 import { togglePlay, startTogether } from '../net/controls';
-import { selectCanControl, useRoom } from '../store';
+import { selectCanControl, useCurrentSource, useRoom } from '../store';
 import { cx, fmtTime } from '../util';
 import { Countdown, ReadyCard } from './Countdown';
-import { Poster } from './PosterCard';
+import { ScreenStage } from './ScreenStage';
+import { Captions, CaptionsMenu, QualityMenu } from './StageMenus';
+import type { YtQuality } from '../store';
+
+/** the player size, in device pixels, that makes YouTube pick each quality (measured: a new
+ * player streams one step above its own height, and YouTube won't drop below 480p) */
+const YT_SIZE: Record<Exclude<YtQuality, 'auto'>, [number, number]> = {
+  hd1080: [1920, 1080], hd720: [1280, 720], large: [640, 360],
+};
 
 let engineRef: SyncEngine | null = null;
 export const getEngine = () => engineRef;
@@ -15,7 +23,11 @@ const loadVol = () => { try { return Number(localStorage.getItem('wp:vol') ?? '0
 
 export function Player({ stageRef }: { stageRef: React.RefObject<HTMLElement | null> }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const videoId = useRoom((s) => s.state.videoId);
+  const ytHostRef = useRef<HTMLDivElement>(null);
+  const stageRef2 = useRef<HTMLDivElement>(null);
+  const ytQuality = useRoom((s) => s.ytQuality);
+  const handleRef = useRef<MediaHandle | null>(null);
+  const share = useRoom((s) => s.share);
   const status = useRoom((s) => s.state.status);
   const engine = useRoom((s) => s.engine);
   const holding = useRoom((s) => s.holding);
@@ -24,7 +36,7 @@ export function Player({ stageRef }: { stageRef: React.RefObject<HTMLElement | n
   const youId = useRoom((s) => s.youId);
   const ready = useRoom((s) => s.ready);
   const canControl = useRoom(selectCanControl);
-  const movie = videoId ? CATALOG_BY_ID[videoId] : null;
+  const movie = useCurrentSource();
   const [vol, setVol] = useState(loadVol);
   const [muted, setMuted] = useState(false);
   const [fs, setFs] = useState(false);
@@ -33,8 +45,7 @@ export function Player({ stageRef }: { stageRef: React.RefObject<HTMLElement | n
 
   // engine lifecycle
   useEffect(() => {
-    const v = videoRef.current!;
-    const e = new SyncEngine(v);
+    const e = new SyncEngine();
     engineRef = e;
     const client = getClient();
     const onState = () => e.onState();
@@ -42,7 +53,7 @@ export function Player({ stageRef }: { stageRef: React.RefObject<HTMLElement | n
     if (client) {
       client.getReport = () => {
         const s = useRoom.getState();
-        return { pos: v.currentTime, drift: s.engine.drift, mode: s.engine.mode, buffering: s.engine.buffering };
+        return { pos: s.engine.pos, drift: s.engine.drift, mode: s.engine.mode, buffering: s.engine.buffering, duration: s.engine.duration || undefined };
       };
     }
     e.onState();
@@ -56,24 +67,64 @@ export function Player({ stageRef }: { stageRef: React.RefObject<HTMLElement | n
     };
   }, []);
 
-  // load source when the room's video changes
+  // load the source when the room's video changes: a <video> for files, the IFrame player for YouTube
+  // YouTube only lowers quality for a brand-new player, so a quality change rebuilds it (this viewer only)
+  const sourceKey = movie ? `${movie.kind}:${movie.ytId ?? movie.url}${movie.kind === 'youtube' ? `:${ytQuality}` : ''}` : '';
+  // YouTube chooses its quality from the player's pixel size, so render the iframe at the
+  // chosen resolution and scale it to fit the stage
+  useEffect(() => {
+    const host = ytHostRef.current!;
+    const stage = stageRef2.current!;
+    const apply = () => {
+      if (ytQuality === 'auto' || movie?.kind !== 'youtube') { host.removeAttribute('style'); return; }
+      const dpr = window.devicePixelRatio || 1;
+      const [w, h] = YT_SIZE[ytQuality].map((n) => n / dpr);
+      const scale = Math.min(stage.clientWidth / w, stage.clientHeight / h);
+      Object.assign(host.style, { inset: 'auto', left: '50%', top: '50%', width: `${w}px`, height: `${h}px`, transform: `translate(-50%, -50%) scale(${scale})` });
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(stage);
+    return () => ro.disconnect();
+  }, [ytQuality, sourceKey, movie?.kind]);
   useEffect(() => {
     const v = videoRef.current!;
-    if (!movie) { v.removeAttribute('src'); v.load(); return; }
-    if (v.getAttribute('data-id') !== movie.id) {
-      v.setAttribute('data-id', movie.id);
-      v.src = movie.url;
+    const host = ytHostRef.current!;
+    let cancelled = false;
+    let yt: YouTubeHandle | null = null;
+    const use = (h: MediaHandle | null) => {
+      handleRef.current = h;
+      (window as unknown as { __wpMedia: unknown }).__wpMedia = h; // tests / devtools
+      h?.setVolume(loadVol(), false);
+      engineRef?.attach(h);
+    };
+    if (!movie) {
+      v.removeAttribute('src'); v.load();
+      use(null);
+    } else if (movie.kind === 'youtube') {
+      v.removeAttribute('src'); v.load();
+      use(null);
+      YouTubeHandle.create(host, movie.ytId!)
+        .then((h) => { if (cancelled) h.destroy(); else { yt = h; use(h); } })
+        .catch(() => { if (!cancelled) useRoom.getState().toast('The YouTube player didn’t load. Check your connection or an ad blocker.', 'error'); });
+    } else {
+      v.src = movie.kind === 'upload' ? apiUrl(movie.url!) : movie.url!;
       v.load();
-      engineRef?.onState();
+      use(new VideoHandle(v));
     }
-  }, [movie]);
+    return () => {
+      cancelled = true;
+      yt?.destroy();
+      host.replaceChildren();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceKey]);
+
 
   useEffect(() => {
-    const v = videoRef.current!;
-    v.volume = vol;
-    v.muted = muted;
+    handleRef.current?.setVolume(vol, muted);
     try { localStorage.setItem('wp:vol', String(vol)); } catch { /* ignore */ }
-  }, [vol, muted]);
+  }, [vol, muted, sourceKey]);
 
   useEffect(() => {
     const on = () => setFs(document.fullscreenElement === stageRef.current);
@@ -96,35 +147,46 @@ export function Player({ stageRef }: { stageRef: React.RefObject<HTMLElement | n
   const joinScreening = async () => { await getEngine()?.play(); useRoom.getState().set({ engine: { ...useRoom.getState().engine, needsGesture: false } }); };
 
   const stragglers = members.filter((m) => health[m.id]?.buffering && m.connected && m.id !== youId);
-  const atEnd = !!movie && status === 'paused' && engine.duration > 0 && engine.pos >= engine.duration - 1.5;
-  const controlsVisible = status === 'paused' || !idle || !movie;
+  const atEnd = !!movie && !share && status === 'paused' && engine.duration > 0 && engine.pos >= engine.duration - 1.5;
+  const controlsVisible = status === 'paused' || !idle || !movie || !!share;
 
   return (
     <div
+      ref={stageRef2}
       className={cx('stage', controlsVisible && 'is-ui', fs && 'is-fs')}
       onPointerMove={wake}
       onPointerLeave={() => setIdle(status === 'playing')}
     >
-      <video ref={videoRef} className="stage__video" playsInline preload="auto" onClick={() => movie && canControl && togglePlay()} />
+      <video ref={videoRef} className={cx('stage__video', movie?.kind === 'youtube' && 'is-hidden')} playsInline preload="auto" onClick={() => movie && canControl && togglePlay()} />
+      <div ref={ytHostRef} className={cx('stage__yt', movie?.kind !== 'youtube' && 'is-hidden')} />
+      {/* YouTube's own UI would only play/pause this one viewer, so clicks land on the room's controls instead */}
+      {movie?.kind === 'youtube' && <div className="stage__catch" onClick={() => canControl && togglePlay()} aria-hidden />}
 
-      {!movie && (
+      {share && <ScreenStage />}
+      {movie && !share && <Captions />}
+
+      {!movie && !share && (
         <div className="stage__empty">
           <div className="stage__curtain" aria-hidden />
           <p className="eyebrow">The screen is dark</p>
           <h2>Nothing’s showing yet</h2>
-          <p>Pick a title and it loads for everyone in the room at once.</p>
-          <button className="btn btn--butter btn--lg" onClick={() => useRoom.getState().set({ discoverOpen: true })}>Find a movie</button>
+          <p>Pick a film, put on a YouTube video, upload your own, or share your screen. It goes up for everyone at once.</p>
+          <div className="stage__empty-actions">
+            <button className="btn btn--butter btn--lg" onClick={() => useRoom.getState().set({ discoverOpen: true })}>Find a movie</button>
+            <button className="btn btn--line btn--lg" onClick={() => useRoom.getState().set({ discoverOpen: true, discoverMode: 'link' })}><YouTubeMark /> YouTube</button>
+            <button className="btn btn--line btn--lg" onClick={() => useRoom.getState().set({ discoverOpen: true, discoverMode: 'upload' })}>Upload a video</button>
+          </div>
         </div>
       )}
 
-      {movie && (
+      {movie && !share && (
         <div className="stage__title">
           <b>{movie.title}</b>
-          <span className="mono">{movie.year}{movie.silent ? ' · silent' : ''}</span>
+          <span className="mono">{movie.label}{movie.silent ? ' · silent' : ''}</span>
         </div>
       )}
 
-      {engine.buffering && movie && !ready?.startAt && <div className="stage__spinner" role="status" aria-label="Buffering" />}
+      {engine.buffering && movie && !share && !ready?.startAt && <div className="stage__spinner" role="status" aria-label="Buffering" />}
 
       {holding && (
         <div className="stage__banner" role="status">
@@ -132,7 +194,7 @@ export function Player({ stageRef }: { stageRef: React.RefObject<HTMLElement | n
         </div>
       )}
 
-      {engine.needsGesture && movie && (
+      {engine.needsGesture && movie && !share && (
         <button className="stage__gesture" onClick={joinScreening}>
           <span className="stage__gesture-icon" aria-hidden>▶</span>
           <b>Tap to join the screening</b>
@@ -151,14 +213,16 @@ export function Player({ stageRef }: { stageRef: React.RefObject<HTMLElement | n
       <Countdown />
       <ReadyCard />
 
-      {movie && (
+      {movie && !share && (
         <div className="stage__bar">
           <button className="ctl" onClick={togglePlay} aria-label={status === 'playing' ? 'Pause for everyone' : 'Play for everyone'} title={canControl ? 'Space' : 'Only the host can control playback'}>
             {status === 'playing' ? <PauseIcon /> : <PlayIcon />}
           </button>
-          <span className="stage__time mono">{fmtTime(engine.pos)} <i>/</i> {fmtTime(engine.duration || movie.runtime)}</span>
+          <span className="stage__time mono">{fmtTime(engine.pos)} <i>/</i> {engine.duration || movie.runtime ? fmtTime(engine.duration || movie.runtime) : '…'}</span>
           <span className="grow" />
           <button className="btn btn--glass btn--sm" onClick={startTogether} disabled={!canControl}>Start together</button>
+          <CaptionsMenu />
+          {movie.kind === 'youtube' && <QualityMenu />}
           <label className="vol">
             <button type="button" className="ctl" aria-label={muted ? 'Unmute' : 'Mute'} onClick={() => setMuted((m) => !m)}>{muted || vol === 0 ? <MuteIcon /> : <VolIcon />}</button>
             <input type="range" min={0} max={1} step={0.02} value={muted ? 0 : vol} aria-label="Your volume (only affects you)" onChange={(e) => { setMuted(false); setVol(Number(e.target.value)); }} />
@@ -170,10 +234,10 @@ export function Player({ stageRef }: { stageRef: React.RefObject<HTMLElement | n
   );
 }
 
-export function MiniPoster({ id }: { id: string }) {
-  const m = CATALOG_BY_ID[id];
-  return m ? <Poster movie={m} size="mini" /> : null;
-}
+/** YouTube's play-button shape in the room's own ink, not the brand red */
+export const YouTubeMark = () => (
+  <svg viewBox="0 0 28 20" width="22" height="16" aria-hidden><rect width="28" height="20" rx="6" fill="currentColor" /><path d="M11.5 5.5v9l7.5-4.5z" fill="var(--ink)" /></svg>
+);
 
 const I = ({ children }: { children: React.ReactNode }) => (
   <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden>{children}</svg>

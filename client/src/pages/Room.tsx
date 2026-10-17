@@ -1,20 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CATALOG_BY_ID } from '@shared/catalog';
 import { formatRoomCode } from '@shared/protocol';
 import { leaveRoom, loadProfile, openRoom, REMOTE_SERVER } from '../net/client';
 import { WakeServer } from '../components/WakeServer';
 import { seekBy, startTogether, togglePlay } from '../net/controls';
-import { useRoom } from '../store';
+import { useCurrentSource, useRoom } from '../store';
 import { cx } from '../util';
 import { navigate } from '../App';
 import { Header } from '../components/Header';
-import { Player } from '../components/Player';
+import { Player, YouTubeMark } from '../components/Player';
 import { SyncStrip } from '../components/SyncStrip';
 import { SeatRow } from '../components/SeatRow';
 import { EmojiBar, FloatingReactions } from '../components/Reactions';
 import { Rail } from '../components/Rail';
 import { Discover } from '../components/Discover';
 import { Toasts } from '../components/Toasts';
+import { AvBar } from '../components/AvBar';
 import { Lobby, LogoMark } from './Lobby';
 
 export function Room({ code }: { code: string }) {
@@ -27,6 +27,7 @@ function LiveRoom({ code, profile }: { code: string; profile: NonNullable<Return
   const status = useRoom((s) => s.status);
   const failMessage = useRoom((s) => s.failMessage);
   const videoId = useRoom((s) => s.state.videoId);
+  const source = useCurrentSource();
   const reconnects = useRoom((s) => s.reconnects);
   const stageRef = useRef<HTMLElement>(null);
   // still not connected after a few seconds on a separately hosted server → it is probably asleep
@@ -43,10 +44,10 @@ function LiveRoom({ code, profile }: { code: string; profile: NonNullable<Return
   }, [code, profile]);
 
   useEffect(() => {
-    const t = videoId ? CATALOG_BY_ID[videoId]?.title : null;
+    const t = source?.title;
     document.title = `${t ? t + ' · ' : ''}Room ${formatRoomCode(code)} · Watch Party`;
     return () => { document.title = 'Watch Party — same movie, same second'; };
-  }, [videoId, code]);
+  }, [source, code]);
 
   // keyboard: space, ←/→, f, m, /
   useEffect(() => {
@@ -97,13 +98,15 @@ function LiveRoom({ code, profile }: { code: string; profile: NonNullable<Return
         </div>
       ) : (
         <div className="room__body">
-          <section className="stage-col" ref={stageRef} aria-label="Screening" style={{ ['--glow' as string]: videoId ? CATALOG_BY_ID[videoId]?.accent[0] : undefined }}>
+          <section className="stage-col" ref={stageRef} aria-label="Screening" style={{ ['--glow' as string]: source?.accent[0] }}>
             <Player stageRef={stageRef} />
             <SyncStrip />
             <div className="reactrow">
               <EmojiBar />
+              <AvBar />
               <div className="reactrow__right">
                 <button className="btn btn--glass btn--sm" onClick={() => useRoom.getState().set({ discoverOpen: true })}>Find a movie</button>
+                <button className="btn btn--glass btn--sm" onClick={() => useRoom.getState().set({ discoverOpen: true, discoverMode: 'link' })}><YouTubeMark /> YouTube</button>
                 <button className="btn btn--butter btn--sm" onClick={startTogether} disabled={!videoId}>Start together</button>
               </div>
             </div>

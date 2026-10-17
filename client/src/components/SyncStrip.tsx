@@ -1,8 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
-import { CATALOG_BY_ID } from '@shared/catalog';
 import { HEAT_BUCKET_S } from '@shared/protocol';
 import { seekTo } from '../net/controls';
-import { selectCanControl, useRoom } from '../store';
+import { selectCanControl, useCurrentSource, useRoom } from '../store';
 import { cx, fmtMs, fmtTime, roomPosition, useFrame } from '../util';
 
 function status(drift: number, buffering: boolean) {
@@ -21,7 +20,9 @@ export function SyncStrip() {
   const health = useRoom((s) => s.health);
   const youId = useRoom((s) => s.youId);
   const canControl = useRoom(selectCanControl);
-  const movie = videoId ? CATALOG_BY_ID[videoId] : null;
+  const share = useRoom((s) => s.share);
+  const src = useCurrentSource();
+  const movie = videoId && !share ? src : null;
   const dur = engine.duration || movie?.runtime || 1;
   const trackRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<number | null>(null);
