@@ -3,6 +3,7 @@
 //
 //   npm run build && npm run e2e:av            # add --headed to watch
 //   E2E_BASE=https://your.site npm run e2e:av   # check a deployed server instead of a local one
+//   E2E_API=https://server E2E_BASE=https://client.netlify.app npm run e2e:av   # client and server apart
 //
 // Chrome's fake devices stand in for the camera, mic and screen picker, so nothing prompts.
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -17,6 +18,7 @@ const HEADED = process.argv.includes('--headed');
 const PORT = 4900 + Math.floor(Math.random() * 90);
 const REMOTE = process.env.E2E_BASE?.replace(/\/+$/, '');
 const BASE = REMOTE ?? `http://127.0.0.1:${PORT}`;
+const API = process.env.E2E_API?.replace(/\/+$/, '') ?? BASE;
 // a deployed server doesn't carry the local test clip; use a public file instead
 const LINK = REMOTE ? 'https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4' : null;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -50,8 +52,8 @@ async function main() {
     ],
   });
   try {
-    for (let i = 0; i < 60; i++) { try { if ((await fetch(`${BASE}/api/health`)).ok) break; } catch { /* starting */ } await sleep(250); }
-    const code = ((await (await fetch(`${BASE}/api/rooms`, { method: 'POST' })).json()) as { code: string }).code;
+    for (let i = 0; i < 60; i++) { try { if ((await fetch(`${API}/api/health`)).ok) break; } catch { /* starting */ } await sleep(250); }
+    const code = ((await (await fetch(`${API}/api/rooms`, { method: 'POST' })).json()) as { code: string }).code;
     const ctx = await browser.newContext({ viewport: { width: 1100, height: 800 }, permissions: ['camera', 'microphone'] });
     const open = async (name: string) => {
       const p = await ctx.newPage();
