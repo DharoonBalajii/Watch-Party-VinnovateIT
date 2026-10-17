@@ -1,6 +1,7 @@
-// YouTube search through the official Data API. The key (YOUTUBE_API_KEY) stays on the
-// server. A search costs ~101 of the default 10,000 daily quota units, so results are
-// cached and each visitor is rate-limited.
+// YouTube search through the official Data API. The keys (YOUTUBE_API_KEY, comma-separated
+// for more than one) stay on the server. A search costs ~101 of each key's 10,000 daily
+// quota units, so results are cached, each visitor is rate-limited, and when one key runs
+// out of quota the next one takes over.
 
 export interface YouTubeResult {
   id: string;
@@ -19,6 +20,12 @@ export class YouTubeSearchError extends Error {
 const CACHE_MS = 6 * 3600 * 1000;
 const cache = new Map<string, { at: number; items: YouTubeResult[] }>();
 const perIp = new Map<string, number[]>();
+/** key → when to try it again after it ran out of quota or was refused */
+const benched = new Map<string, number>();
+const BENCH_MS = 60 * 60 * 1000;
+
+/** test hook */
+export function resetYouTubeKeys() { benched.clear(); cache.clear(); perIp.clear(); }
 
 const decode = (s: string) => s
   .replace(/&#39;/g, '\'').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
@@ -30,8 +37,9 @@ export function isoDuration(d: string): number {
   return Number(m[1] ?? 0) * 86400 + Number(m[2] ?? 0) * 3600 + Number(m[3] ?? 0) * 60 + Number(m[4] ?? 0);
 }
 
-export async function searchYouTube(raw: string, ip: string, key = process.env.YOUTUBE_API_KEY, now = Date.now()): Promise<YouTubeResult[]> {
-  if (!key) throw new YouTubeSearchError(501, 'YouTube search isn’t set up on this server yet. Paste a YouTube link instead.', 'not_configured');
+export async function searchYouTube(raw: string, ip: string, keyList = process.env.YOUTUBE_API_KEY, now = Date.now()): Promise<YouTubeResult[]> {
+  const keys = (keyList ?? '').split(',').map((k) => k.trim()).filter(Boolean);
+  if (!keys.length) throw new YouTubeSearchError(501, 'YouTube search isn’t set up on this server yet. Paste a YouTube link instead.', 'not_configured');
   const q = raw.replace(/\s+/g, ' ').trim().slice(0, 100);
   if (!q) return [];
   const k = q.toLowerCase();
@@ -45,15 +53,22 @@ export async function searchYouTube(raw: string, ip: string, key = process.env.Y
   perIp.set(ip, recent);
   if (perIp.size > 5000) perIp.clear();
 
-  const api = (path: string, params: Record<string, string>) =>
-    fetch(`https://www.googleapis.com/youtube/v3/${path}?${new URLSearchParams({ ...params, key })}`, { signal: AbortSignal.timeout(6000) })
-      .then(async (r) => {
-        if (r.ok) return r.json();
-        const body = (await r.json().catch(() => null)) as { error?: { errors?: { reason?: string }[] } } | null;
-        const reason = body?.error?.errors?.[0]?.reason ?? '';
-        if (reason === 'quotaExceeded') throw new YouTubeSearchError(503, 'YouTube search has hit today’s limit. Paste a link instead, or try tomorrow.', 'quota');
-        throw new YouTubeSearchError(502, 'YouTube search failed. Paste a link instead.');
-      });
+  // try each key in order, skipping ones that recently ran out of quota or were refused
+  const api = async (path: string, params: Record<string, string>): Promise<unknown> => {
+    let quotaHit = false;
+    for (const key of keys) {
+      if ((benched.get(key) ?? 0) > now) { quotaHit = true; continue; }
+      const r = await fetch(`https://www.googleapis.com/youtube/v3/${path}?${new URLSearchParams({ ...params, key })}`, { signal: AbortSignal.timeout(6000) });
+      if (r.ok) return r.json();
+      const body = (await r.json().catch(() => null)) as { error?: { errors?: { reason?: string }[] } } | null;
+      const reason = body?.error?.errors?.[0]?.reason ?? '';
+      if (reason === 'quotaExceeded' || reason === 'dailyLimitExceeded' || reason === 'rateLimitExceeded') { quotaHit = true; benched.set(key, now + BENCH_MS); continue; }
+      if (r.status === 400 || r.status === 403) { benched.set(key, now + BENCH_MS); console.warn(`[youtube] key …${key.slice(-4)} refused: ${reason || r.status}`); continue; }
+      throw new YouTubeSearchError(502, 'YouTube search failed. Paste a link instead.');
+    }
+    if (quotaHit) throw new YouTubeSearchError(503, 'YouTube search has hit today’s limit. Paste a link instead, or try tomorrow.', 'quota');
+    throw new YouTubeSearchError(502, 'YouTube search isn’t working right now. Paste a link instead.');
+  };
 
   const found = (await api('search', {
     part: 'snippet', type: 'video', videoEmbeddable: 'true', maxResults: '15', safeSearch: 'moderate', q,

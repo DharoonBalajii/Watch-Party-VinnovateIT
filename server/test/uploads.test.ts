@@ -63,3 +63,31 @@ describe('isoDuration', () => {
     expect(isoDuration('P0D')).toBe(0);
   });
 });
+
+describe('YouTube search keys', () => {
+  it('falls through to the next key when one runs out of quota, and remembers it', async () => {
+    const { searchYouTube, resetYouTubeKeys } = await import('../src/youtube');
+    resetYouTubeKeys();
+    const used: string[] = [];
+    const real = globalThis.fetch;
+    globalThis.fetch = (async (url: string) => {
+      const key = new URL(url).searchParams.get('key')!;
+      used.push(key);
+      if (key === 'A') return new Response(JSON.stringify({ error: { errors: [{ reason: 'quotaExceeded' }] } }), { status: 403 });
+      if (url.includes('/search?')) return new Response(JSON.stringify({ items: [{ id: { videoId: 'dQw4w9WgXcQ' }, snippet: { title: 'Rock &amp; roll', channelTitle: 'Ch' } }] }));
+      return new Response(JSON.stringify({ items: [{ id: 'dQw4w9WgXcQ', contentDetails: { duration: 'PT3M33S' } }] }));
+    }) as typeof fetch;
+    try {
+      const out = await searchYouTube('first', '1.1.1.1', 'A, B');
+      expect(out[0]).toMatchObject({ id: 'dQw4w9WgXcQ', title: 'Rock & roll', duration: 213 });
+      expect(used).toEqual(['A', 'B', 'B']); // A tried once, then benched for the details call
+      used.length = 0;
+      await searchYouTube('second', '1.1.1.1', 'A,B');
+      expect(used).toEqual(['B', 'B']);
+      await expect(searchYouTube('third', '1.1.1.1', 'A')).rejects.toMatchObject({ code: 'quota' });
+    } finally {
+      globalThis.fetch = real;
+      resetYouTubeKeys();
+    }
+  });
+});
